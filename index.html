@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fut&Sal</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<div id="app">
+  <div id="screen-setup" class="screen active">
+    <p class="sort-title">Fut&Sal</p>
+    <p class="sort-sub">Selecione os times que vão jogar hoje</p>
+    <div class="teams-grid" id="team-selector"></div>
+    <div class="queue-section">
+      <p class="queue-label">Ordem da fila (arraste para reordenar)</p>
+      <div id="queue-preview" class="queue-list"></div>
+    </div>
+    <button class="btn-primary" id="btn-start-game" onclick="startGame()" disabled>Começar</button>
+    <button class="btn-secondary" onclick="shuffleQueue()">Sortear ordem aleatória</button>
+  </div>
+
+  <div id="screen-match" class="screen">
+    <div class="match-header">
+      <span class="match-label" id="round-label">Rodada 1</span>
+      <span class="wins-badge wins-0" id="wins-badge">0 vitórias</span>
+    </div>
+    <div class="timer-display">
+      <div class="timer-big" id="timer-display">8:00</div>
+    </div>
+    <div class="teams-score">
+      <div class="team-card" id="card-a">
+        <div class="team-color-bar" id="bar-a"></div>
+        <div class="team-nm" id="name-a">Time A</div>
+        <div class="team-score" id="score-a">0</div>
+        <div class="score-btns">
+          <button class="score-btn" onclick="changeScore(0,-1)">−</button>
+          <button class="score-btn add" onclick="changeScore(0,1)">+</button>
+        </div>
+      </div>
+      <div class="vs-label">vs</div>
+      <div class="team-card" id="card-b">
+        <div class="team-color-bar" id="bar-b"></div>
+        <div class="team-nm" id="name-b">Time B</div>
+        <div class="team-score" id="score-b">0</div>
+        <div class="score-btns">
+          <button class="score-btn" onclick="changeScore(1,-1)">−</button>
+          <button class="score-btn add" onclick="changeScore(1,1)">+</button>
+        </div>
+      </div>
+    </div>
+    <div class="timer-controls">
+      <button class="ctrl-btn start" id="btn-play" onclick="toggleTimer()"><i class="ti ti-player-play" aria-hidden="true"></i> Iniciar</button>
+      <button class="ctrl-btn end-game" onclick="endRound('manual')"><i class="ti ti-flag" aria-hidden="true"></i> Encerrar</button>
+    </div>
+    <div class="next-section" id="next-section">
+      <p class="next-label">Próximo jogo</p>
+      <div class="next-teams" id="next-teams-display"></div>
+    </div>
+    <div class="queue-section">
+      <p class="queue-label">Fila</p>
+      <div class="queue-row" id="queue-display"></div>
+    </div>
+  </div>
+
+  <div id="screen-result" class="screen">
+    <div class="result-screen">
+      <div class="result-icon" id="result-icon">⚽</div>
+      <p class="result-title" id="result-title">Fim de rodada</p>
+      <p class="result-sub" id="result-sub"></p>
+      <div class="result-score">
+        <div class="res-team">
+          <div class="res-dot" id="res-dot-a"></div>
+          <div class="res-name" id="res-name-a"></div>
+          <div class="res-score" id="res-score-a"></div>
+        </div>
+        <div class="res-vs">×</div>
+        <div class="res-team">
+          <div class="res-dot" id="res-dot-b"></div>
+          <div class="res-name" id="res-name-b"></div>
+          <div class="res-score" id="res-score-b"></div>
+        </div>
+      </div>
+      <div class="info-box" id="result-info"></div>
+      <div id="sorteio-section" style="display:none">
+        <p style="font-size:13px;color:var(--color-text-secondary);margin-bottom:8px;">Saíram juntos — sorteio para ordem de retorno:</p>
+        <button class="sortear-btn" onclick="realizarSorteio()"><i class="ti ti-arrows-shuffle" aria-hidden="true"></i> Sortear</button>
+        <div id="sorteio-resultado" style="display:none" class="sorteio-result"></div>
+      </div>
+      <button class="btn-primary" id="btn-next-round" onclick="nextRound()">Próxima rodada</button>
+      <button class="btn-secondary" onclick="showScreen('screen-setup')">Reiniciar</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
