@@ -1,4 +1,4 @@
-# Fut&Sal
+# Judge App
 
 Aplicação de timer e placar para partidas de futsal.
 
