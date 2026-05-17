@@ -2,98 +2,229 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Fut&Sal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Judge App</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#552583" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Judge App" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32x32.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192x192.png" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
 
 <div id="app">
-  <div id="screen-setup" class="screen active">
-    <p class="sort-title">Fut&Sal</p>
-    <p class="sort-sub">Selecione os times que vão jogar hoje</p>
-    <div class="teams-grid" id="team-selector"></div>
-    <div class="queue-section">
-      <p class="queue-label">Ordem da fila (arraste para reordenar)</p>
-      <div id="queue-preview" class="queue-list"></div>
+
+  <!-- ══════════════════════════════════════════
+       TELA 1 — DEFINIR REGRAS
+  ══════════════════════════════════════════ -->
+  <div id="screen-rules" class="screen active">
+    <div class="topbar">
+      <span class="app-logo">Judge App</span>
     </div>
-    <button class="btn-primary" id="btn-start-game" onclick="startGame()" disabled>Começar</button>
-    <button class="btn-secondary" onclick="shuffleQueue()">Sortear ordem aleatória</button>
+    <div class="screen-body">
+      <p class="screen-title">Definir Regras</p>
+      <p class="screen-sub">Configure como cada partida será encerrada</p>
+
+      <div class="rule-card">
+        <div class="rule-icon"><i class="ti ti-clock" aria-hidden="true"></i></div>
+        <div class="rule-info">
+          <p class="rule-label">Duração da Partida</p>
+          <p class="rule-hint">minutos por jogo</p>
+        </div>
+        <div class="stepper">
+          <button class="step-btn" onclick="changeRule('minutes',-1)">−</button>
+          <span class="step-val" id="val-minutes">8</span>
+          <button class="step-btn" onclick="changeRule('minutes',1)">+</button>
+        </div>
+      </div>
+
+      <div class="rule-card">
+        <div class="rule-icon"><i class="ti ti-ball-football" aria-hidden="true"></i></div>
+        <div class="rule-info">
+          <p class="rule-label">Gols para Encerrar</p>
+          <p class="rule-hint">gols encerra o jogo</p>
+        </div>
+        <div class="stepper">
+          <button class="step-btn" onclick="changeRule('goals',-1)">−</button>
+          <span class="step-val" id="val-goals">2</span>
+          <button class="step-btn" onclick="changeRule('goals',1)">+</button>
+        </div>
+      </div>
+    </div>
+    <div class="screen-footer">
+      <button class="btn-primary" onclick="showScreen('screen-setup')">
+        Próximo <i class="ti ti-arrow-right" aria-hidden="true"></i>
+      </button>
+    </div>
   </div>
 
+  <!-- ══════════════════════════════════════════
+       TELA 2 — TIMES & FILA
+  ══════════════════════════════════════════ -->
+  <div id="screen-setup" class="screen">
+    <div class="topbar">
+      <button class="back-btn" onclick="showScreen('screen-rules')"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+      <span class="app-logo">Judge App</span>
+      <span style="width:36px"></span>
+    </div>
+    <div class="screen-body">
+      <p class="screen-title">Times &amp; Fila</p>
+
+      <p class="section-label">Selecionar Times</p>
+      <div class="teams-grid" id="team-selector"></div>
+
+      <div class="queue-section">
+        <p class="section-label">Ordem da Fila <span id="queue-count" class="count-badge">0</span></p>
+        <div id="queue-preview" class="queue-list"></div>
+      </div>
+    </div>
+    <div class="screen-footer">
+      <button class="btn-secondary" onclick="shuffleQueue()">
+        <i class="ti ti-dice-5" aria-hidden="true"></i> Sortear Fila
+      </button>
+      <button class="btn-primary" id="btn-start-game" onclick="startGame()" disabled>
+        Começar <i class="ti ti-arrow-right" aria-hidden="true"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       TELA 3 — PARTIDA / TIMER + PLACAR
+  ══════════════════════════════════════════ -->
   <div id="screen-match" class="screen">
-    <div class="match-header">
-      <span class="match-label" id="round-label">Rodada 1</span>
-      <span class="wins-badge wins-0" id="wins-badge">0 vitórias</span>
+    <div class="topbar">
+      <span class="app-logo">Judge App</span>
+      <span class="round-badge" id="round-label">Rodada 1</span>
     </div>
-    <div class="timer-display">
-      <div class="timer-big" id="timer-display">8:00</div>
+
+    <div class="timer-wrap">
+      <div class="timer-ring">
+        <svg class="timer-svg" viewBox="0 0 120 120">
+          <circle class="ring-bg" cx="60" cy="60" r="52"/>
+          <circle class="ring-fill" id="ring-fill" cx="60" cy="60" r="52"/>
+        </svg>
+        <div class="timer-inner">
+          <div class="timer-big" id="timer-display">8:00</div>
+          <div class="timer-sub">Tempo de Jogo</div>
+        </div>
+      </div>
     </div>
-    <div class="teams-score">
+
+    <div class="scoreboard">
       <div class="team-card" id="card-a">
-        <div class="team-color-bar" id="bar-a"></div>
+        <div class="jersey-wrap" id="jersey-a"></div>
         <div class="team-nm" id="name-a">Time A</div>
-        <div class="team-score" id="score-a">0</div>
+        <div class="team-score-num" id="score-a">0</div>
         <div class="score-btns">
-          <button class="score-btn" onclick="changeScore(0,-1)">−</button>
+          <button class="score-btn minus" onclick="changeScore(0,-1)">−</button>
           <button class="score-btn add" onclick="changeScore(0,1)">+</button>
         </div>
       </div>
-      <div class="vs-label">vs</div>
+      <div class="vs-col"><span class="vs-label">X</span></div>
       <div class="team-card" id="card-b">
-        <div class="team-color-bar" id="bar-b"></div>
+        <div class="jersey-wrap" id="jersey-b"></div>
         <div class="team-nm" id="name-b">Time B</div>
-        <div class="team-score" id="score-b">0</div>
+        <div class="team-score-num" id="score-b">0</div>
         <div class="score-btns">
-          <button class="score-btn" onclick="changeScore(1,-1)">−</button>
+          <button class="score-btn minus" onclick="changeScore(1,-1)">−</button>
           <button class="score-btn add" onclick="changeScore(1,1)">+</button>
         </div>
       </div>
     </div>
+
     <div class="timer-controls">
-      <button class="ctrl-btn start" id="btn-play" onclick="toggleTimer()"><i class="ti ti-player-play" aria-hidden="true"></i> Iniciar</button>
-      <button class="ctrl-btn end-game" onclick="endRound('manual')"><i class="ti ti-flag" aria-hidden="true"></i> Encerrar</button>
+      <button class="ctrl-btn start" id="btn-play" onclick="toggleTimer()">
+        <i class="ti ti-player-play" aria-hidden="true"></i> Iniciar
+      </button>
+      <button class="ctrl-btn end-game" onclick="endRound('manual')">
+        <i class="ti ti-flag" aria-hidden="true"></i> Encerrar
+      </button>
     </div>
-    <div class="next-section" id="next-section">
-      <p class="next-label">Próximo jogo</p>
+
+    <div class="info-strip" id="next-section">
+      <p class="info-strip-label">Próximo Jogo</p>
       <div class="next-teams" id="next-teams-display"></div>
     </div>
-    <div class="queue-section">
-      <p class="queue-label">Fila</p>
-      <div class="queue-row" id="queue-display"></div>
+
+    <div class="info-strip">
+      <p class="info-strip-label">Fila</p>
+      <div class="queue-chips-row" id="queue-display"></div>
     </div>
   </div>
 
+  <!-- ══════════════════════════════════════════
+       TELA 4 — RESULTADO
+  ══════════════════════════════════════════ -->
   <div id="screen-result" class="screen">
-    <div class="result-screen">
-      <div class="result-icon" id="result-icon">⚽</div>
-      <p class="result-title" id="result-title">Fim de rodada</p>
-      <p class="result-sub" id="result-sub"></p>
-      <div class="result-score">
+    <div class="topbar">
+      <span class="app-logo">Judge App</span>
+    </div>
+    <div class="result-scroll">
+      <div class="result-hero">
+        <div class="result-icon-big" id="result-icon">⚽</div>
+        <p class="result-title" id="result-title">Fim de Rodada</p>
+        <p class="result-sub" id="result-sub"></p>
+      </div>
+
+      <div class="result-scoreline">
         <div class="res-team">
-          <div class="res-dot" id="res-dot-a"></div>
+          <div class="res-jersey" id="res-jersey-a"></div>
           <div class="res-name" id="res-name-a"></div>
-          <div class="res-score" id="res-score-a"></div>
+          <div class="res-score-num" id="res-score-a">0</div>
         </div>
         <div class="res-vs">×</div>
         <div class="res-team">
-          <div class="res-dot" id="res-dot-b"></div>
+          <div class="res-jersey" id="res-jersey-b"></div>
           <div class="res-name" id="res-name-b"></div>
-          <div class="res-score" id="res-score-b"></div>
+          <div class="res-score-num" id="res-score-b">0</div>
         </div>
       </div>
-      <div class="info-box" id="result-info"></div>
-      <div id="sorteio-section" style="display:none">
-        <p style="font-size:13px;color:var(--color-text-secondary);margin-bottom:8px;">Saíram juntos — sorteio para ordem de retorno:</p>
-        <button class="sortear-btn" onclick="realizarSorteio()"><i class="ti ti-arrows-shuffle" aria-hidden="true"></i> Sortear</button>
-        <div id="sorteio-resultado" style="display:none" class="sorteio-result"></div>
+
+      <div class="info-card" id="result-info"></div>
+
+      <div id="next-game-box" class="next-game-box" style="display:none">
+        <p class="next-game-label">Próximo Jogo</p>
+        <div class="next-game-teams" id="next-game-teams"></div>
       </div>
-      <button class="btn-primary" id="btn-next-round" onclick="nextRound()">Próxima rodada</button>
-      <button class="btn-secondary" onclick="showScreen('screen-setup')">Reiniciar</button>
+
+      <div id="sorteio-section" style="display:none">
+        <p class="sorteio-note">Saíram juntos — sorteio para ordem de retorno:</p>
+        <button class="btn-shuffle" onclick="realizarSorteio()">
+          <i class="ti ti-arrows-shuffle" aria-hidden="true"></i> Sortear
+        </button>
+        <div id="sorteio-resultado" style="display:none" class="sorteio-result-card"></div>
+      </div>
+    </div>
+    <div class="screen-footer">
+      <button class="btn-primary" id="btn-next-round" onclick="nextRound()">
+        Iniciar Próxima Partida <i class="ti ti-arrow-right" aria-hidden="true"></i>
+      </button>
+      <button class="btn-secondary" onclick="showScreen('screen-rules')">
+        <i class="ti ti-refresh" aria-hidden="true"></i> Reiniciar
+      </button>
     </div>
   </div>
+
 </div>
 
 <script src="js/app.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js');
+    });
+  }
+</script>
 </body>
 </html>
