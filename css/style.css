@@ -33,7 +33,7 @@ html { height: 100%; }
 
 body {
   font-family: 'Nunito', sans-serif;
-  background: var(--bg);
+  background: var(--purple);
   color: var(--text);
   min-height: 100vh;
   min-height: 100dvh;
@@ -60,7 +60,10 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 14px 20px 12px;
+  padding-top: calc(14px + env(safe-area-inset-top));
+  padding-bottom: 12px;
+  padding-left: 20px;
+  padding-right: 20px;
   background: var(--purple);
   position: relative;
 }
