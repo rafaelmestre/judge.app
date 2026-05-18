@@ -32,6 +32,52 @@ let roundEnded    = false;
 let pendingSorteio = null;
 
 /* ══════════════════════════════════════════════════
+   PERSISTÊNCIA — localStorage
+══════════════════════════════════════════════════ */
+const SAVE_KEY = 'judgeapp_state';
+
+function saveState() {
+  const state = {
+    ruleMinutes, ruleGoals,
+    selectedTeams, queue, playing, scores,
+    consecutiveWins, winnerTeam, roundNumber,
+    timerSeconds, timerTotal, roundEnded,
+    pendingSorteio, draftCounts, draftLog,
+    currentScreen: document.querySelector('.screen.active')?.id || 'screen-rules'
+  };
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch(e) {}
+}
+
+function clearState() {
+  try { localStorage.removeItem(SAVE_KEY); } catch(e) {}
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return false;
+    const s = JSON.parse(raw);
+    ruleMinutes     = s.ruleMinutes     ?? 8;
+    ruleGoals       = s.ruleGoals       ?? 2;
+    selectedTeams   = s.selectedTeams   ?? [];
+    queue           = s.queue           ?? [];
+    playing         = s.playing         ?? [null, null];
+    scores          = s.scores          ?? [0, 0];
+    consecutiveWins = s.consecutiveWins ?? 0;
+    winnerTeam      = s.winnerTeam      ?? null;
+    roundNumber     = s.roundNumber     ?? 0;
+    timerSeconds    = s.timerSeconds    ?? 480;
+    timerTotal      = s.timerTotal      ?? 480;
+    roundEnded      = s.roundEnded      ?? false;
+    pendingSorteio  = s.pendingSorteio  ?? null;
+    draftCounts     = s.draftCounts     ?? {};
+    draftLog        = s.draftLog        ?? [];
+    return s.currentScreen || false;
+  } catch(e) { return false; }
+}
+
+
+/* ══════════════════════════════════════════════════
    NAVEGAÇÃO
 ══════════════════════════════════════════════════ */
 function showScreen(id) {
@@ -51,6 +97,7 @@ function changeRule(type, delta) {
     ruleGoals = Math.max(1, Math.min(10, ruleGoals + delta));
     document.getElementById('val-goals').textContent = ruleGoals;
   }
+  saveState();
 }
 
 /* ══════════════════════════════════════════════════
@@ -109,6 +156,7 @@ function toggleTeam(id) {
   const draftSec = document.getElementById('draft-section');
   draftSec.style.display = selectedTeams.length >= 2 ? 'block' : 'none';
   resetDraft();
+  saveState();
 }
 
 function getTeam(id) { return TEAMS_DEF.find(t => t.id === id); }
@@ -136,6 +184,7 @@ function shuffleQueue() {
   }
   renderTeamSelector();
   renderQueuePreview();
+  saveState();
 }
 
 /* ══════════════════════════════════════════════════
@@ -150,6 +199,7 @@ function startGame() {
   timerTotal = ruleMinutes * 60;
   loadRound();
   showScreen('screen-match');
+  saveState();
 }
 
 function loadRound() {
@@ -241,6 +291,7 @@ function changeScore(team, delta) {
   if (roundEnded) return;
   scores[team] = Math.max(0, scores[team] + delta);
   document.getElementById(team === 0 ? 'score-a' : 'score-b').textContent = scores[team];
+  saveState();
   if (scores[0] >= ruleGoals || scores[1] >= ruleGoals) {
     clearInterval(timerInterval);
     timerRunning = false;
@@ -370,6 +421,7 @@ function endRound(reason) {
     document.getElementById('btn-next-round').style.display = 'block';
   }
 
+  saveState();
   showScreen('screen-result');
 }
 
@@ -383,12 +435,14 @@ function realizarSorteio() {
   el.style.display = 'flex';
   el.innerHTML = `${jerseysvg(ta, 28)}<span class="next-name">${ta.name} entra antes de ${tb.name}</span>`;
   pendingSorteio = null;
+  saveState();
   document.getElementById('btn-next-round').style.display = 'block';
 }
 
 function nextRound() {
   showScreen('screen-match');
   loadRound();
+  saveState();
 }
 
 /* ══════════════════════════════════════════════════
@@ -425,10 +479,84 @@ function updateQueueDisplay() {
 }
 
 /* ══════════════════════════════════════════════════
-   INIT
+   INIT — restaura estado salvo ou começa do zero
 ══════════════════════════════════════════════════ */
-renderTeamSelector();
-renderQueuePreview();
+(function init() {
+  const savedScreen = loadState();
+
+  /* Regras */
+  document.getElementById('val-minutes').textContent = ruleMinutes;
+  document.getElementById('val-goals').textContent   = ruleGoals;
+
+  /* Tela 2 */
+  renderTeamSelector();
+  renderQueuePreview();
+  document.getElementById('queue-count').textContent = selectedTeams.length;
+  if (selectedTeams.length >= 2) {
+    document.getElementById('draft-section').style.display = 'block';
+    renderDraftList();
+    if (draftLog.length) {
+      document.getElementById('draft-reset-btn').style.display = 'block';
+      const pool = selectedTeams.filter(id => (draftCounts[id] || 0) < 5);
+      if (!pool.length) {
+        const btn = document.getElementById('draft-main-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="ti ti-check" aria-hidden="true"></i> Todos sorteados!';
+      }
+    }
+  }
+
+  /* Restaura tela */
+  if (savedScreen) {
+    showScreen(savedScreen);
+
+    if (savedScreen === 'screen-match') {
+      /* Reconstrói tela de jogo */
+      const ta = getTeam(playing[0]);
+      const tb = getTeam(playing[1]);
+      document.getElementById('jersey-a').innerHTML = jerseysvg(ta, 56);
+      document.getElementById('jersey-b').innerHTML = jerseysvg(tb, 56);
+      document.getElementById('name-a').textContent = ta.name;
+      document.getElementById('name-b').textContent = tb.name;
+      document.getElementById('score-a').textContent = scores[0];
+      document.getElementById('score-b').textContent = scores[1];
+      document.getElementById('card-a').style.setProperty('--team-color', ta.color);
+      document.getElementById('card-b').style.setProperty('--team-color', tb.color);
+      document.getElementById('round-label').textContent = `Rodada ${roundNumber}`;
+      updateTimerDisplay();
+      updateRingProgress(timerSeconds / timerTotal);
+      updateNextDisplay();
+      updateQueueDisplay();
+      /* Timer pausado — usuário retoma manualmente */
+      const btn = document.getElementById('btn-play');
+      btn.className = 'ctrl-btn start';
+      btn.innerHTML = '<i class="ti ti-player-play" aria-hidden="true"></i> Continuar';
+    }
+
+    if (savedScreen === 'screen-result') {
+      /* Tela de resultado não tem estado visual crítico — volta pra partida */
+      showScreen('screen-match');
+      const ta = getTeam(playing[0]);
+      const tb = getTeam(playing[1]);
+      document.getElementById('jersey-a').innerHTML = jerseysvg(ta, 56);
+      document.getElementById('jersey-b').innerHTML = jerseysvg(tb, 56);
+      document.getElementById('name-a').textContent = ta.name;
+      document.getElementById('name-b').textContent = tb.name;
+      document.getElementById('score-a').textContent = scores[0];
+      document.getElementById('score-b').textContent = scores[1];
+      document.getElementById('card-a').style.setProperty('--team-color', ta.color);
+      document.getElementById('card-b').style.setProperty('--team-color', tb.color);
+      document.getElementById('round-label').textContent = `Rodada ${roundNumber}`;
+      updateTimerDisplay();
+      updateRingProgress(timerSeconds / timerTotal);
+      updateNextDisplay();
+      updateQueueDisplay();
+      const btn = document.getElementById('btn-play');
+      btn.className = 'ctrl-btn start';
+      btn.innerHTML = '<i class="ti ti-player-play" aria-hidden="true"></i> Continuar';
+    }
+  }
+})();
 
 /* ══════════════════════════════════════════════════
    SORTEADOR DE COLETES
@@ -475,6 +603,7 @@ function sortearJogador() {
 
   /* Atualiza lista de todos sorteados */
   renderDraftList();
+  saveState();
 
   /* Mostra botão refazer */
   document.getElementById('draft-reset-btn').style.display = 'block';
@@ -510,4 +639,12 @@ function renderDraftList() {
       <div class="draft-dots">${dots}</div>
     </div>`;
   }).join('');
+}
+
+/* ══════════════════════════════════════════════════
+   REINICIAR APP — limpa estado salvo
+══════════════════════════════════════════════════ */
+function reiniciarApp() {
+  clearState();
+  location.reload();
 }
