@@ -32,6 +32,24 @@ let roundEnded    = false;
 let pendingSorteio = null;
 
 /* ══════════════════════════════════════════════════
+   MÓDULO DE SOM — arquivos MP3 em sounds/
+══════════════════════════════════════════════════ */
+const SoundFX = (() => {
+  function play(file) {
+    try {
+      const audio = new Audio(`sounds/${file}`);
+      audio.play().catch(() => {});
+    } catch(e) {}
+  }
+
+  return {
+    apitarInicio: () => play('start.mp3'),
+    apitarFim:    () => play('finish.mp3'),
+    apitarGol:    () => play('goal.mp3'),
+  };
+})();
+
+/* ══════════════════════════════════════════════════
    PERSISTÊNCIA — localStorage
 ══════════════════════════════════════════════════ */
 const SAVE_KEY = 'judgeapp_state';
@@ -75,7 +93,6 @@ function loadState() {
     return s.currentScreen || false;
   } catch(e) { return false; }
 }
-
 
 /* ══════════════════════════════════════════════════
    NAVEGAÇÃO
@@ -131,14 +148,10 @@ function renderTeamSelector() {
   const el = document.getElementById('team-selector');
   el.innerHTML = TEAMS_DEF.map(t => `
     <div class="team-slot ${selectedTeams.includes(t.id) ? 'selected' : ''}" onclick="toggleTeam('${t.id}')">
-      <div class="slot-jersey">${jerseysvg_small(t)}</div>
+      <div class="slot-jersey">${jerseysvg(t, 36)}</div>
       <span class="team-name-label">${t.name}</span>
       ${selectedTeams.includes(t.id) ? `<span class="check-badge"><i class="ti ti-check"></i></span>` : ''}
     </div>`).join('');
-}
-
-function jerseysvg_small(team) {
-  return jerseysvg(team, 36);
 }
 
 function toggleTeam(id) {
@@ -152,7 +165,6 @@ function toggleTeam(id) {
   const btn = document.getElementById('btn-start-game');
   btn.disabled = selectedTeams.length < 2;
   document.getElementById('queue-count').textContent = selectedTeams.length;
-  /* Mostra/esconde sorteador conforme times selecionados */
   const draftSec = document.getElementById('draft-section');
   draftSec.style.display = selectedTeams.length >= 2 ? 'block' : 'none';
   resetDraft();
@@ -263,6 +275,7 @@ function toggleTimer() {
   timerRunning = !timerRunning;
   const btn = document.getElementById('btn-play');
   if (timerRunning) {
+    SoundFX.apitarInicio();
     btn.className = 'ctrl-btn pause';
     btn.innerHTML = '<i class="ti ti-player-pause" aria-hidden="true"></i> Pausar';
     timerInterval = setInterval(() => {
@@ -291,6 +304,7 @@ function changeScore(team, delta) {
   if (roundEnded) return;
   scores[team] = Math.max(0, scores[team] + delta);
   document.getElementById(team === 0 ? 'score-a' : 'score-b').textContent = scores[team];
+  if (delta > 0) SoundFX.apitarGol();
   saveState();
   if (scores[0] >= ruleGoals || scores[1] >= ruleGoals) {
     clearInterval(timerInterval);
@@ -304,6 +318,7 @@ function changeScore(team, delta) {
 ══════════════════════════════════════════════════ */
 function endRound(reason) {
   if (roundEnded) return;
+  SoundFX.apitarFim();
   roundEnded = true;
   clearInterval(timerInterval);
   timerRunning = false;
@@ -332,10 +347,10 @@ function endRound(reason) {
     winnerTeam = null;
     infoHtml = `<strong>${ta.name}</strong> e <strong>${tb.name}</strong> empataram. Ambos saem da quadra.`;
   } else {
-    const winIdx   = scores[0] > scores[1] ? 0 : 1;
-    const loseIdx  = 1 - winIdx;
-    const winner   = getTeam(playing[winIdx]);
-    const loser    = getTeam(playing[loseIdx]);
+    const winIdx  = scores[0] > scores[1] ? 0 : 1;
+    const loseIdx = 1 - winIdx;
+    const winner  = getTeam(playing[winIdx]);
+    const loser   = getTeam(playing[loseIdx]);
 
     if (winnerTeam === playing[winIdx]) {
       consecutiveWins++;
@@ -351,7 +366,6 @@ function endRound(reason) {
       consecutiveWins = 0;
       winnerTeam = null;
       infoHtml = `<strong>${winner.name}</strong> atingiu 3 vitórias consecutivas. <strong>${loser.name}</strong> entra na fila antes de <strong>${winner.name}</strong>.`;
-      /* Perdedor entra antes do vencedor — ordem garantida, sem sorteio */
       queue.push(playing[loseIdx]);
       queue.push(playing[winIdx]);
       if (queue.length >= 2) {
@@ -361,7 +375,6 @@ function endRound(reason) {
         playing[0] = queue.shift();
         playing[1] = playing[loseIdx];
       }
-      /* bothOut permanece false — não aciona sorteio */
     } else {
       title = `${winner.name} Venceu!`;
       sub = reason === 'time' ? 'Tempo esgotado' : `${ruleGoals} gols marcados`;
@@ -395,8 +408,7 @@ function endRound(reason) {
   document.getElementById('result-sub').textContent = sub;
   document.getElementById('result-info').innerHTML = infoHtml;
 
-  /* Próximo jogo */
-  const nextBox = document.getElementById('next-game-box');
+  const nextBox   = document.getElementById('next-game-box');
   const nextTeams = document.getElementById('next-game-teams');
   if (playing[0] && playing[1]) {
     const pA = getTeam(playing[0]);
@@ -410,7 +422,6 @@ function endRound(reason) {
     nextBox.style.display = 'none';
   }
 
-  /* Sorteio */
   const sorteioSec = document.getElementById('sorteio-section');
   if (pendingSorteio && pendingSorteio.length === 2) {
     sorteioSec.style.display = 'block';
@@ -481,14 +492,15 @@ function updateQueueDisplay() {
 /* ══════════════════════════════════════════════════
    INIT — restaura estado salvo ou começa do zero
 ══════════════════════════════════════════════════ */
+let draftCounts = {};
+let draftLog    = [];
+
 (function init() {
   const savedScreen = loadState();
 
-  /* Regras */
   document.getElementById('val-minutes').textContent = ruleMinutes;
   document.getElementById('val-goals').textContent   = ruleGoals;
 
-  /* Tela 2 */
   renderTeamSelector();
   renderQueuePreview();
   document.getElementById('queue-count').textContent = selectedTeams.length;
@@ -506,36 +518,11 @@ function updateQueueDisplay() {
     }
   }
 
-  /* Restaura tela */
   if (savedScreen) {
     showScreen(savedScreen);
 
-    if (savedScreen === 'screen-match') {
-      /* Reconstrói tela de jogo */
-      const ta = getTeam(playing[0]);
-      const tb = getTeam(playing[1]);
-      document.getElementById('jersey-a').innerHTML = jerseysvg(ta, 56);
-      document.getElementById('jersey-b').innerHTML = jerseysvg(tb, 56);
-      document.getElementById('name-a').textContent = ta.name;
-      document.getElementById('name-b').textContent = tb.name;
-      document.getElementById('score-a').textContent = scores[0];
-      document.getElementById('score-b').textContent = scores[1];
-      document.getElementById('card-a').style.setProperty('--team-color', ta.color);
-      document.getElementById('card-b').style.setProperty('--team-color', tb.color);
-      document.getElementById('round-label').textContent = `Rodada ${roundNumber}`;
-      updateTimerDisplay();
-      updateRingProgress(timerSeconds / timerTotal);
-      updateNextDisplay();
-      updateQueueDisplay();
-      /* Timer pausado — usuário retoma manualmente */
-      const btn = document.getElementById('btn-play');
-      btn.className = 'ctrl-btn start';
-      btn.innerHTML = '<i class="ti ti-player-play" aria-hidden="true"></i> Continuar';
-    }
-
-    if (savedScreen === 'screen-result') {
-      /* Tela de resultado não tem estado visual crítico — volta pra partida */
-      showScreen('screen-match');
+    if (savedScreen === 'screen-match' || savedScreen === 'screen-result') {
+      if (!playing[0] || !playing[1]) return;
       const ta = getTeam(playing[0]);
       const tb = getTeam(playing[1]);
       document.getElementById('jersey-a').innerHTML = jerseysvg(ta, 56);
@@ -554,17 +541,14 @@ function updateQueueDisplay() {
       const btn = document.getElementById('btn-play');
       btn.className = 'ctrl-btn start';
       btn.innerHTML = '<i class="ti ti-player-play" aria-hidden="true"></i> Continuar';
+      if (savedScreen === 'screen-result') showScreen('screen-match');
     }
   }
 })();
 
 /* ══════════════════════════════════════════════════
    SORTEADOR DE COLETES
-   Máx 5 jogadores por time, apenas times selecionados
 ══════════════════════════════════════════════════ */
-let draftCounts = {};   /* { teamId: count } */
-let draftLog    = [];   /* [ { teamId, num } ] */
-
 function resetDraft() {
   draftCounts = {};
   draftLog    = [];
@@ -579,19 +563,15 @@ function resetDraft() {
 }
 
 function sortearJogador() {
-  /* Monta pool de times disponíveis (selecionados e com < 5 jogadores) */
   const pool = selectedTeams.filter(id => (draftCounts[id] || 0) < 5);
+  if (!pool.length) return;
 
-  if (!pool.length) return; /* não deve acontecer mas protege */
-
-  /* Sorteia aleatoriamente */
   const id   = pool[Math.floor(Math.random() * pool.length)];
   const team = getTeam(id);
   draftCounts[id] = (draftCounts[id] || 0) + 1;
   const num = draftCounts[id];
   draftLog.push({ id, num });
 
-  /* Mostra resultado animado */
   const result = document.getElementById('draft-result');
   result.style.display = 'flex';
   result.innerHTML = `
@@ -601,14 +581,11 @@ function sortearJogador() {
       <span class="draft-result-count">Jogador ${num} de 5</span>
     </div>`;
 
-  /* Atualiza lista de todos sorteados */
   renderDraftList();
   saveState();
 
-  /* Mostra botão refazer */
   document.getElementById('draft-reset-btn').style.display = 'block';
 
-  /* Verifica se todos os times lotaram */
   const newPool = selectedTeams.filter(id => (draftCounts[id] || 0) < 5);
   if (!newPool.length) {
     const btn = document.getElementById('draft-main-btn');
@@ -621,17 +598,12 @@ function renderDraftList() {
   const el = document.getElementById('draft-list');
   if (!draftLog.length) { el.innerHTML = ''; return; }
 
-  /* Agrupa por time */
   const grouped = {};
-  draftLog.forEach(({ id }) => {
-    grouped[id] = (grouped[id] || 0) + 1;
-  });
+  draftLog.forEach(({ id }) => { grouped[id] = (grouped[id] || 0) + 1; });
 
   el.innerHTML = Object.entries(grouped).map(([id, count]) => {
     const team = getTeam(id);
-    const dots = Array.from({ length: count }, (_, i) =>
-      `<span class="draft-dot"></span>`
-    ).join('');
+    const dots = Array.from({ length: count }, () => `<span class="draft-dot"></span>`).join('');
     return `<div class="draft-list-item">
       ${jerseysvg(team, 28)}
       <span class="draft-list-name">${team.name}</span>
@@ -642,7 +614,7 @@ function renderDraftList() {
 }
 
 /* ══════════════════════════════════════════════════
-   REINICIAR APP — limpa estado salvo
+   REINICIAR APP
 ══════════════════════════════════════════════════ */
 function reiniciarApp() {
   clearState();
