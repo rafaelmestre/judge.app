@@ -105,6 +105,10 @@ function toggleTeam(id) {
   const btn = document.getElementById('btn-start-game');
   btn.disabled = selectedTeams.length < 2;
   document.getElementById('queue-count').textContent = selectedTeams.length;
+  /* Mostra/esconde sorteador conforme times selecionados */
+  const draftSec = document.getElementById('draft-section');
+  draftSec.style.display = selectedTeams.length >= 2 ? 'block' : 'none';
+  resetDraft();
 }
 
 function getTeam(id) { return TEAMS_DEF.find(t => t.id === id); }
@@ -425,3 +429,85 @@ function updateQueueDisplay() {
 ══════════════════════════════════════════════════ */
 renderTeamSelector();
 renderQueuePreview();
+
+/* ══════════════════════════════════════════════════
+   SORTEADOR DE COLETES
+   Máx 5 jogadores por time, apenas times selecionados
+══════════════════════════════════════════════════ */
+let draftCounts = {};   /* { teamId: count } */
+let draftLog    = [];   /* [ { teamId, num } ] */
+
+function resetDraft() {
+  draftCounts = {};
+  draftLog    = [];
+  const result = document.getElementById('draft-result');
+  const list   = document.getElementById('draft-list');
+  const reset  = document.getElementById('draft-reset-btn');
+  const btn    = document.getElementById('draft-main-btn');
+  if (result) { result.style.display = 'none'; result.innerHTML = ''; }
+  if (list)   list.innerHTML = '';
+  if (reset)  reset.style.display = 'none';
+  if (btn)    { btn.disabled = false; btn.innerHTML = '<i class="ti ti-arrows-shuffle" aria-hidden="true"></i> Sortear Colete'; }
+}
+
+function sortearJogador() {
+  /* Monta pool de times disponíveis (selecionados e com < 5 jogadores) */
+  const pool = selectedTeams.filter(id => (draftCounts[id] || 0) < 5);
+
+  if (!pool.length) return; /* não deve acontecer mas protege */
+
+  /* Sorteia aleatoriamente */
+  const id   = pool[Math.floor(Math.random() * pool.length)];
+  const team = getTeam(id);
+  draftCounts[id] = (draftCounts[id] || 0) + 1;
+  const num = draftCounts[id];
+  draftLog.push({ id, num });
+
+  /* Mostra resultado animado */
+  const result = document.getElementById('draft-result');
+  result.style.display = 'flex';
+  result.innerHTML = `
+    <div class="draft-result-inner">
+      ${jerseysvg(team, 64)}
+      <span class="draft-result-name">${team.name}</span>
+      <span class="draft-result-count">Jogador ${num} de 5</span>
+    </div>`;
+
+  /* Atualiza lista de todos sorteados */
+  renderDraftList();
+
+  /* Mostra botão refazer */
+  document.getElementById('draft-reset-btn').style.display = 'block';
+
+  /* Verifica se todos os times lotaram */
+  const newPool = selectedTeams.filter(id => (draftCounts[id] || 0) < 5);
+  if (!newPool.length) {
+    const btn = document.getElementById('draft-main-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ti ti-check" aria-hidden="true"></i> Todos sorteados!';
+  }
+}
+
+function renderDraftList() {
+  const el = document.getElementById('draft-list');
+  if (!draftLog.length) { el.innerHTML = ''; return; }
+
+  /* Agrupa por time */
+  const grouped = {};
+  draftLog.forEach(({ id }) => {
+    grouped[id] = (grouped[id] || 0) + 1;
+  });
+
+  el.innerHTML = Object.entries(grouped).map(([id, count]) => {
+    const team = getTeam(id);
+    const dots = Array.from({ length: count }, (_, i) =>
+      `<span class="draft-dot"></span>`
+    ).join('');
+    return `<div class="draft-list-item">
+      ${jerseysvg(team, 28)}
+      <span class="draft-list-name">${team.name}</span>
+      <span class="draft-list-count">${count}/5</span>
+      <div class="draft-dots">${dots}</div>
+    </div>`;
+  }).join('');
+}

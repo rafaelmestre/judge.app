@@ -84,6 +84,23 @@
       <p class="section-label">Selecionar Times</p>
       <div class="teams-grid" id="team-selector"></div>
 
+      <!-- SORTEADOR DE JOGADORES -->
+      <div class="draft-section" id="draft-section" style="display:none">
+        <p class="section-label"><i class="ti ti-shirt" aria-hidden="true"></i> Sortear Coletes</p>
+        <p class="draft-hint">Aperte sortear para cada jogador receber sua cor</p>
+
+        <button class="draft-main-btn" id="draft-main-btn" onclick="sortearJogador()">
+          <i class="ti ti-arrows-shuffle" aria-hidden="true"></i> Sortear Colete
+        </button>
+
+        <div id="draft-result" class="draft-result" style="display:none"></div>
+        <div id="draft-list" class="draft-list"></div>
+
+        <button class="draft-reset-btn" id="draft-reset-btn" onclick="resetDraft()" style="display:none">
+          <i class="ti ti-refresh" aria-hidden="true"></i> Refazer Sorteio
+        </button>
+      </div>
+
       <div class="queue-section">
         <p class="section-label">Ordem da Fila <span id="queue-count" class="count-badge">0</span></p>
         <div id="queue-preview" class="queue-list"></div>
