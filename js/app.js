@@ -30,6 +30,9 @@ let timerRunning  = false;
 let timerInterval = null;
 let roundEnded    = false;
 let pendingSorteio = null;
+let sessionHistory = [];   // rodadas do dia de jogo
+let sessionStartedAt = null;
+let sessionEndedAt = null;
 
 /* ══════════════════════════════════════════════════
    MÓDULO DE SOM — arquivos MP3 em sounds/
@@ -61,6 +64,7 @@ function saveState() {
     consecutiveWins, winnerTeam, roundNumber,
     timerSeconds, timerTotal, roundEnded,
     pendingSorteio, draftCounts, draftLog,
+    sessionHistory, sessionStartedAt, sessionEndedAt,
     currentScreen: document.querySelector('.screen.active')?.id || 'screen-rules'
   };
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch(e) {}
@@ -90,6 +94,9 @@ function loadState() {
     pendingSorteio  = s.pendingSorteio  ?? null;
     draftCounts     = s.draftCounts     ?? {};
     draftLog        = s.draftLog        ?? [];
+    sessionHistory  = s.sessionHistory  ?? [];
+    sessionStartedAt = s.sessionStartedAt ?? null;
+    sessionEndedAt  = s.sessionEndedAt  ?? null;
     return s.currentScreen || false;
   } catch(e) { return false; }
 }
@@ -175,18 +182,63 @@ function getTeam(id) { return TEAMS_DEF.find(t => t.id === id); }
 
 function renderQueuePreview() {
   const el = document.getElementById('queue-preview');
+  const hint = document.getElementById('queue-drag-hint');
+  if (hint) hint.style.display = selectedTeams.length >= 2 ? 'block' : 'none';
   if (!selectedTeams.length) {
     el.innerHTML = '<span class="queue-empty">Selecione ao menos 2 times</span>';
     return;
   }
   el.innerHTML = selectedTeams.map((id, i) => {
     const t = getTeam(id);
-    return `<div class="queue-item">
+    return `<div class="queue-item" data-id="${id}">
       <span class="queue-pos">${i + 1}</span>
       ${jerseysvg(t, 28)}
       <span class="queue-name">${t.name}</span>
+      <span class="drag-handle" aria-label="Arrastar ${t.name}"><i class="ti ti-grip-vertical" aria-hidden="true"></i></span>
     </div>`;
   }).join('');
+}
+
+/* Arrastar e soltar (estilo playlist) — Pointer Events: funciona com dedo e mouse */
+let dragItem = null;
+
+function onQueuePointerDown(e) {
+  const handle = e.target.closest('.drag-handle');
+  if (!handle) return;
+  e.preventDefault();
+  dragItem = handle.closest('.queue-item');
+  dragItem.classList.add('dragging');
+  if (navigator.vibrate) navigator.vibrate(10);
+  document.addEventListener('pointermove', onQueuePointerMove);
+  document.addEventListener('pointerup', onQueuePointerUp);
+  document.addEventListener('pointercancel', onQueuePointerUp);
+}
+
+function onQueuePointerMove(e) {
+  if (!dragItem) return;
+  e.preventDefault();
+  const list  = document.getElementById('queue-preview');
+  const items = [...list.querySelectorAll('.queue-item:not(.dragging)')];
+  const before = items.find(it => {
+    const r = it.getBoundingClientRect();
+    return e.clientY < r.top + r.height / 2;
+  });
+  if (before) { if (before !== dragItem.nextSibling) list.insertBefore(dragItem, before); }
+  else if (list.lastElementChild !== dragItem) list.appendChild(dragItem);
+  [...list.querySelectorAll('.queue-pos')].forEach((p, i) => p.textContent = i + 1);
+}
+
+function onQueuePointerUp() {
+  document.removeEventListener('pointermove', onQueuePointerMove);
+  document.removeEventListener('pointerup', onQueuePointerUp);
+  document.removeEventListener('pointercancel', onQueuePointerUp);
+  if (!dragItem) return;
+  dragItem.classList.remove('dragging');
+  dragItem = null;
+  const list = document.getElementById('queue-preview');
+  selectedTeams = [...list.querySelectorAll('.queue-item')].map(el => el.dataset.id);
+  renderQueuePreview();
+  saveState();
 }
 
 function shuffleQueue() {
@@ -209,6 +261,9 @@ function startGame() {
   winnerTeam = null;
   roundNumber = 1;
   timerTotal = ruleMinutes * 60;
+  sessionHistory = [];
+  sessionStartedAt = Date.now();
+  sessionEndedAt = null;
   loadRound();
   showScreen('screen-match');
   saveState();
@@ -322,6 +377,7 @@ function endRound(reason) {
   roundEnded = true;
   clearInterval(timerInterval);
   timerRunning = false;
+  logRound(reason);
   roundNumber++;
 
   const ta = getTeam(playing[0]);
@@ -518,8 +574,11 @@ let draftLog    = [];
     }
   }
 
+  document.getElementById('queue-preview').addEventListener('pointerdown', onQueuePointerDown);
+
   if (savedScreen) {
     showScreen(savedScreen);
+    if (savedScreen === 'screen-summary') { renderSummary(); return; }
 
     if (savedScreen === 'screen-match' || savedScreen === 'screen-result') {
       if (!playing[0] || !playing[1]) return;
@@ -622,100 +681,100 @@ function renderDraftList() {
 }
 
 /* ══════════════════════════════════════════════════
-   EDITOR DE FILA — reordenar, trocar quem joga,
-   adicionar/remover times sem perder a sessão
+   SESSÃO — histórico do dia de jogo, saída e resumo
 ══════════════════════════════════════════════════ */
-let qeList = [];
-
-function openQueueEditor() {
-  if (timerRunning) toggleTimer(); // pausa o jogo enquanto edita
-  qeList = [playing[0], playing[1], ...queue].filter(Boolean);
-  renderQueueEditor();
-  document.getElementById('queue-editor').style.display = 'flex';
+function logRound(reason) {
+  // rodada interrompida pelo "Sair" não conta vitória
+  const winner = (reason === 'exit' || scores[0] === scores[1]) ? null : playing[scores[0] > scores[1] ? 0 : 1];
+  sessionHistory.push({
+    round: roundNumber,
+    teams: [playing[0], playing[1]],
+    scores: [scores[0], scores[1]],
+    winner,
+    reason,                                  // 'time' | 'goals' | 'exit'
+    duration: timerTotal - timerSeconds,     // segundos jogados
+    endedAt: Date.now(),
+  });
 }
 
-function closeQueueEditor() {
-  document.getElementById('queue-editor').style.display = 'none';
+function fmtDuration(sec) {
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-function qeSamePlaying() {
-  const a = qeList.slice(0, 2);
-  return a.length === 2 && a.includes(playing[0]) && a.includes(playing[1]);
+function fmtClock(ts) {
+  return new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
-function qeMove(i, delta) {
-  const j = i + delta;
-  if (j < 0 || j >= qeList.length) return;
-  [qeList[i], qeList[j]] = [qeList[j], qeList[i]];
-  renderQueueEditor();
+/* Etapa 1: botão Sair → abre a confirmação flutuante (o jogo pausa) */
+function askExitSession() {
+  if (timerRunning) toggleTimer();
+  const n = sessionHistory.length;
+  document.getElementById('exit-text').textContent = n
+    ? `${n} ${n === 1 ? 'rodada jogada' : 'rodadas jogadas'} hoje. Todas as rodadas serão finalizadas e você verá o resumo da sessão.`
+    : 'Todas as rodadas deste dia de jogo serão finalizadas e você verá o resumo da sessão.';
+  document.getElementById('exit-modal').style.display = 'flex';
 }
 
-function qeRemove(i) {
-  if (qeList.length <= 2) return;
-  qeList.splice(i, 1);
-  renderQueueEditor();
+function closeExitModal() {
+  document.getElementById('exit-modal').style.display = 'none';
 }
 
-function qeAdd(id) {
-  if (qeList.includes(id)) return;
-  qeList.push(id);
-  renderQueueEditor();
-}
-
-function renderQueueEditor() {
-  const list = document.getElementById('qe-list');
-  const last = qeList.length - 1;
-  list.innerHTML = qeList.map((id, i) => {
-    const t = getTeam(id);
-    const label = i === 0 ? '<p class="qe-group-label">Em quadra</p>'
-                : i === 2 ? '<p class="qe-group-label">Na fila</p>' : '';
-    return `${label}
-      <div class="qe-item ${i < 2 ? 'playing' : ''}">
-        <span class="qe-pos">${i < 2 ? '<i class="ti ti-ball-football" aria-hidden="true"></i>' : i - 1}</span>
-        ${jerseysvg(t, 28)}
-        <span class="qe-name">${t.name}</span>
-        <button class="qe-btn" onclick="qeMove(${i},-1)" ${i === 0 ? 'disabled' : ''} aria-label="Subir ${t.name}"><i class="ti ti-chevron-up"></i></button>
-        <button class="qe-btn" onclick="qeMove(${i},1)" ${i === last ? 'disabled' : ''} aria-label="Descer ${t.name}"><i class="ti ti-chevron-down"></i></button>
-        <button class="qe-btn remove" onclick="qeRemove(${i})" ${qeList.length <= 2 ? 'disabled' : ''} aria-label="Remover ${t.name}"><i class="ti ti-trash"></i></button>
-      </div>`;
-  }).join('');
-
-  const missing = TEAMS_DEF.filter(t => !qeList.includes(t.id));
-  document.getElementById('qe-add-section').style.display = missing.length ? 'block' : 'none';
-  document.getElementById('qe-add').innerHTML = missing.map(t => `
-    <button class="qe-add-chip" onclick="qeAdd('${t.id}')">${jerseysvg(t, 20)} ${t.name}</button>`).join('');
-
-  const inProgress = scores[0] > 0 || scores[1] > 0 || timerSeconds < timerTotal;
-  document.getElementById('qe-warning').style.display =
-    (!qeSamePlaying() && inProgress) ? 'flex' : 'none';
-}
-
-function saveQueueEditor() {
-  if (qeList.length < 2) return;
-
-  qeList.forEach(id => { if (!selectedTeams.includes(id)) selectedTeams.push(id); });
-  queue = qeList.slice(2);
-
-  if (qeSamePlaying()) {
-    // mesmos times em quadra: mantém placar e tempo, só atualiza a fila
-    updateNextDisplay();
-    updateQueueDisplay();
-  } else {
-    playing = qeList.slice(0, 2);
-    if (!playing.includes(winnerTeam)) { consecutiveWins = 0; winnerTeam = null; }
-    loadRound();
-  }
-
+/* Etapa 2: confirmou → encerra a sessão e mostra o resumo */
+function confirmExitSession() {
+  const onMatch = document.getElementById('screen-match').classList.contains('active');
+  const started = scores[0] > 0 || scores[1] > 0 || timerSeconds < timerTotal;
+  if (onMatch && !roundEnded && started) logRound('exit'); // registra a rodada interrompida
+  clearInterval(timerInterval);
+  timerRunning = false;
+  roundEnded = true;
+  sessionEndedAt = Date.now();
+  closeExitModal();
+  renderSummary();
+  showScreen('screen-summary');
   saveState();
-  closeQueueEditor();
 }
 
-/* ══════════════════════════════════════════════════
-   REINICIAR APP
-══════════════════════════════════════════════════ */
-function reiniciarApp() {
-  const ok = confirm('Reiniciar apaga a fila, o placar e o sorteio de coletes desta sessão. Deseja mesmo reiniciar?');
-  if (!ok) return;
+function renderSummary() {
+  const h = sessionHistory;
+  const totalSec   = h.reduce((acc, r) => acc + r.duration, 0);
+  const totalGoals = h.reduce((acc, r) => acc + r.scores[0] + r.scores[1], 0);
+
+  document.getElementById('sum-period').textContent = sessionStartedAt
+    ? `${fmtClock(sessionStartedAt)} – ${fmtClock(sessionEndedAt || Date.now())}` : '';
+
+  document.getElementById('sum-stats').innerHTML = `
+    <div class="sum-stat"><span class="sum-stat-num">${h.length}</span><span class="sum-stat-lbl">Rodadas</span></div>
+    <div class="sum-stat"><span class="sum-stat-num">${fmtDuration(totalSec)}</span><span class="sum-stat-lbl">Tempo jogado</span></div>
+    <div class="sum-stat"><span class="sum-stat-num">${totalGoals}</span><span class="sum-stat-lbl">Gols</span></div>`;
+
+  const wins = {};
+  h.forEach(r => { if (r.winner) wins[r.winner] = (wins[r.winner] || 0) + 1; });
+  const ranking = Object.entries(wins).sort((a, b) => b[1] - a[1]);
+  document.getElementById('sum-wins').innerHTML = ranking.length
+    ? ranking.map(([id, n]) => {
+        const t = getTeam(id);
+        return `<div class="sum-win-chip">${jerseysvg(t, 22)}<span>${t.name}</span><strong>${n}</strong></div>`;
+      }).join('')
+    : '<span class="queue-empty">Nenhuma vitória registrada</span>';
+
+  const reasonLbl = { time: 'Tempo', goals: 'Gols', exit: 'Interrompida', manual: 'Encerrada' };
+  document.getElementById('sum-rounds').innerHTML = h.length
+    ? h.map(r => {
+        const ta = getTeam(r.teams[0]), tb = getTeam(r.teams[1]);
+        const wa = r.winner === r.teams[0] ? 'win' : '', wb = r.winner === r.teams[1] ? 'win' : '';
+        return `<div class="sum-round">
+          <span class="sum-round-n">R${r.round}</span>
+          <span class="sum-team ${wa}">${jerseysvg(ta, 20)}${ta.name}</span>
+          <span class="sum-score">${r.scores[0]} × ${r.scores[1]}</span>
+          <span class="sum-team right ${wb}">${tb.name}${jerseysvg(tb, 20)}</span>
+          <span class="sum-meta">${fmtDuration(r.duration)} · ${reasonLbl[r.reason] || ''}</span>
+        </div>`;
+      }).join('')
+    : '<span class="queue-empty">Nenhuma rodada jogada</span>';
+}
+
+function newSession() {
   clearState();
   location.reload();
 }

@@ -103,6 +103,7 @@
 
       <div class="queue-section">
         <p class="section-label">Ordem da Fila <span id="queue-count" class="count-badge">0</span></p>
+        <p class="draft-hint" id="queue-drag-hint" style="display:none">Sorteie a fila e, se precisar, arraste <i class="ti ti-grip-vertical" aria-hidden="true"></i> para ajustar</p>
         <div id="queue-preview" class="queue-list"></div>
       </div>
     </div>
@@ -121,6 +122,7 @@
   ══════════════════════════════════════════ -->
   <div id="screen-match" class="screen">
     <div class="topbar">
+      <button class="exit-btn" onclick="askExitSession()"><i class="ti ti-logout" aria-hidden="true"></i> Sair</button>
       <span class="app-logo">Judge App</span>
       <span class="round-badge" id="round-label">Rodada 1</span>
     </div>
@@ -172,37 +174,8 @@
     </div>
 
     <div class="info-strip">
-      <div class="info-strip-head">
-        <p class="info-strip-label">Fila</p>
-        <button class="edit-queue-btn" onclick="openQueueEditor()">
-          <i class="ti ti-edit" aria-hidden="true"></i> Editar
-        </button>
-      </div>
+      <p class="info-strip-label">Fila</p>
       <div class="queue-chips-row" id="queue-display"></div>
-    </div>
-
-    <!-- Editor de fila -->
-    <div id="queue-editor" class="qe-backdrop" style="display:none" onclick="if(event.target===this) closeQueueEditor()">
-      <div class="qe-sheet" role="dialog" aria-modal="true" aria-labelledby="qe-title">
-        <div class="qe-header">
-          <p class="qe-title" id="qe-title">Editar fila</p>
-          <button class="qe-close" onclick="closeQueueEditor()" aria-label="Fechar"><i class="ti ti-x"></i></button>
-        </div>
-        <p class="qe-hint">Os 2 primeiros jogam. Use as setas para reordenar.</p>
-        <div class="qe-list" id="qe-list"></div>
-        <p class="qe-warning" id="qe-warning" style="display:none">
-          <i class="ti ti-alert-triangle" aria-hidden="true"></i>
-          Os times em quadra mudaram: placar e tempo desta partida serão zerados.
-        </p>
-        <div id="qe-add-section">
-          <p class="qe-sub">Adicionar time</p>
-          <div class="qe-add" id="qe-add"></div>
-        </div>
-        <div class="qe-footer">
-          <button class="btn-secondary" onclick="closeQueueEditor()">Cancelar</button>
-          <button class="btn-primary" onclick="saveQueueEditor()">Salvar</button>
-        </div>
-      </div>
     </div>
   </div>
 
@@ -253,9 +226,48 @@
       <button class="btn-primary" id="btn-next-round" onclick="nextRound()">
         Iniciar Próxima Partida <i class="ti ti-arrow-right" aria-hidden="true"></i>
       </button>
-      <button class="btn-secondary" onclick="reiniciarApp()">
-        <i class="ti ti-refresh" aria-hidden="true"></i> Reiniciar
+      <button class="btn-secondary" onclick="askExitSession()">
+        <i class="ti ti-logout" aria-hidden="true"></i> Encerrar Sessão
       </button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       TELA 5 — RESUMO DA SESSÃO
+  ══════════════════════════════════════════ -->
+  <div id="screen-summary" class="screen">
+    <div class="topbar">
+      <span class="app-logo">Judge App</span>
+    </div>
+    <div class="result-scroll">
+      <div class="result-hero">
+        <div class="result-icon-big">🏁</div>
+        <p class="result-title">Sessão Encerrada</p>
+        <p class="result-sub" id="sum-period"></p>
+      </div>
+      <div class="sum-stats" id="sum-stats"></div>
+      <p class="sum-label">Vitórias por time</p>
+      <div class="sum-wins" id="sum-wins"></div>
+      <p class="sum-label">Rodadas</p>
+      <div class="sum-rounds" id="sum-rounds"></div>
+    </div>
+    <div class="screen-footer">
+      <button class="btn-primary" onclick="newSession()">
+        <i class="ti ti-plus" aria-hidden="true"></i> Nova Sessão
+      </button>
+    </div>
+  </div>
+
+  <!-- Confirmação de saída (flutuante) -->
+  <div id="exit-modal" class="modal-backdrop" style="display:none" onclick="if(event.target===this) closeExitModal()">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="exit-title">
+      <div class="modal-icon"><i class="ti ti-logout" aria-hidden="true"></i></div>
+      <p class="modal-title" id="exit-title">Encerrar a sessão?</p>
+      <p class="modal-text" id="exit-text">Todas as rodadas deste dia de jogo serão finalizadas e você verá o resumo da sessão.</p>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeExitModal()">Voltar ao jogo</button>
+        <button class="btn-danger" onclick="confirmExitSession()">Encerrar sessão</button>
+      </div>
     </div>
   </div>
 
