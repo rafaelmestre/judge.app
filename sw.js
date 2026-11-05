@@ -1,4 +1,4 @@
-const CACHE = 'judge-app-v9';
+const CACHE = 'judge-app-v11';
 const ASSETS = [
   './',
   './index.html',

@@ -64,7 +64,11 @@ const Cloud = (() => {
       while (outbox.length) {
         const { table, row } = outbox[0];
         const { error } = await client.from(table).upsert(row);
-        if (error) { lastError = error.message; console.warn('[Cloud]', error); break; }
+        if (error) {
+          // 23503 = a sessão desse item foi excluída: descarta e segue
+          if (error.code === '23503') { console.warn('[Cloud] descartado', error); outbox.shift(); saveOutbox(); continue; }
+          lastError = error.message; console.warn('[Cloud]', error); break;
+        }
         outbox.shift();
         saveOutbox();
       }
@@ -116,6 +120,28 @@ const Cloud = (() => {
     return data;
   }
 
+  /* ── edição de sessões (precisa de internet) ── */
+  function requireOnline() {
+    if (!client || !user) throw Object.assign(new Error('not logged'), { code: 'not_logged' });
+    if (!navigator.onLine) throw Object.assign(new Error('offline'), { code: 'offline' });
+  }
+
+  async function renameSession(id, name) {
+    requireOnline();
+    const { error } = await client.from('sessions').update({ name: name || null }).eq('id', id);
+    if (error) throw error;
+  }
+
+  async function deleteSession(id) {
+    requireOnline();
+    // tira da fila qualquer envio pendente dessa sessão (senão ela "renasce")
+    outbox = outbox.filter(it => it.row.id !== id && it.row.session_id !== id);
+    saveOutbox();
+    const { error } = await client.from('sessions').delete().eq('id', id); // rodadas saem junto (cascade)
+    if (error) throw error;
+    notify();
+  }
+
   /* avisa a interface que o status mudou */
   function notify() {
     if (typeof renderCloudStatus === 'function') renderCloudStatus();
@@ -132,7 +158,7 @@ const Cloud = (() => {
     };
   }
 
-  return { init, enqueue, flush, signIn, signUp, signOut, listSessions, status };
+  return { init, enqueue, flush, signIn, signUp, signOut, listSessions, renameSession, deleteSession, status };
 })();
 
 /* ID único gerado no aparelho (funciona offline) */
