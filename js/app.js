@@ -622,6 +622,95 @@ function renderDraftList() {
 }
 
 /* ══════════════════════════════════════════════════
+   EDITOR DE FILA — reordenar, trocar quem joga,
+   adicionar/remover times sem perder a sessão
+══════════════════════════════════════════════════ */
+let qeList = [];
+
+function openQueueEditor() {
+  if (timerRunning) toggleTimer(); // pausa o jogo enquanto edita
+  qeList = [playing[0], playing[1], ...queue].filter(Boolean);
+  renderQueueEditor();
+  document.getElementById('queue-editor').style.display = 'flex';
+}
+
+function closeQueueEditor() {
+  document.getElementById('queue-editor').style.display = 'none';
+}
+
+function qeSamePlaying() {
+  const a = qeList.slice(0, 2);
+  return a.length === 2 && a.includes(playing[0]) && a.includes(playing[1]);
+}
+
+function qeMove(i, delta) {
+  const j = i + delta;
+  if (j < 0 || j >= qeList.length) return;
+  [qeList[i], qeList[j]] = [qeList[j], qeList[i]];
+  renderQueueEditor();
+}
+
+function qeRemove(i) {
+  if (qeList.length <= 2) return;
+  qeList.splice(i, 1);
+  renderQueueEditor();
+}
+
+function qeAdd(id) {
+  if (qeList.includes(id)) return;
+  qeList.push(id);
+  renderQueueEditor();
+}
+
+function renderQueueEditor() {
+  const list = document.getElementById('qe-list');
+  const last = qeList.length - 1;
+  list.innerHTML = qeList.map((id, i) => {
+    const t = getTeam(id);
+    const label = i === 0 ? '<p class="qe-group-label">Em quadra</p>'
+                : i === 2 ? '<p class="qe-group-label">Na fila</p>' : '';
+    return `${label}
+      <div class="qe-item ${i < 2 ? 'playing' : ''}">
+        <span class="qe-pos">${i < 2 ? '<i class="ti ti-ball-football" aria-hidden="true"></i>' : i - 1}</span>
+        ${jerseysvg(t, 28)}
+        <span class="qe-name">${t.name}</span>
+        <button class="qe-btn" onclick="qeMove(${i},-1)" ${i === 0 ? 'disabled' : ''} aria-label="Subir ${t.name}"><i class="ti ti-chevron-up"></i></button>
+        <button class="qe-btn" onclick="qeMove(${i},1)" ${i === last ? 'disabled' : ''} aria-label="Descer ${t.name}"><i class="ti ti-chevron-down"></i></button>
+        <button class="qe-btn remove" onclick="qeRemove(${i})" ${qeList.length <= 2 ? 'disabled' : ''} aria-label="Remover ${t.name}"><i class="ti ti-trash"></i></button>
+      </div>`;
+  }).join('');
+
+  const missing = TEAMS_DEF.filter(t => !qeList.includes(t.id));
+  document.getElementById('qe-add-section').style.display = missing.length ? 'block' : 'none';
+  document.getElementById('qe-add').innerHTML = missing.map(t => `
+    <button class="qe-add-chip" onclick="qeAdd('${t.id}')">${jerseysvg(t, 20)} ${t.name}</button>`).join('');
+
+  const inProgress = scores[0] > 0 || scores[1] > 0 || timerSeconds < timerTotal;
+  document.getElementById('qe-warning').style.display =
+    (!qeSamePlaying() && inProgress) ? 'flex' : 'none';
+}
+
+function saveQueueEditor() {
+  if (qeList.length < 2) return;
+
+  qeList.forEach(id => { if (!selectedTeams.includes(id)) selectedTeams.push(id); });
+  queue = qeList.slice(2);
+
+  if (qeSamePlaying()) {
+    // mesmos times em quadra: mantém placar e tempo, só atualiza a fila
+    updateNextDisplay();
+    updateQueueDisplay();
+  } else {
+    playing = qeList.slice(0, 2);
+    if (!playing.includes(winnerTeam)) { consecutiveWins = 0; winnerTeam = null; }
+    loadRound();
+  }
+
+  saveState();
+  closeQueueEditor();
+}
+
+/* ══════════════════════════════════════════════════
    REINICIAR APP
 ══════════════════════════════════════════════════ */
 function reiniciarApp() {

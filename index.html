@@ -172,8 +172,37 @@
     </div>
 
     <div class="info-strip">
-      <p class="info-strip-label">Fila</p>
+      <div class="info-strip-head">
+        <p class="info-strip-label">Fila</p>
+        <button class="edit-queue-btn" onclick="openQueueEditor()">
+          <i class="ti ti-edit" aria-hidden="true"></i> Editar
+        </button>
+      </div>
       <div class="queue-chips-row" id="queue-display"></div>
+    </div>
+
+    <!-- Editor de fila -->
+    <div id="queue-editor" class="qe-backdrop" style="display:none" onclick="if(event.target===this) closeQueueEditor()">
+      <div class="qe-sheet" role="dialog" aria-modal="true" aria-labelledby="qe-title">
+        <div class="qe-header">
+          <p class="qe-title" id="qe-title">Editar fila</p>
+          <button class="qe-close" onclick="closeQueueEditor()" aria-label="Fechar"><i class="ti ti-x"></i></button>
+        </div>
+        <p class="qe-hint">Os 2 primeiros jogam. Use as setas para reordenar.</p>
+        <div class="qe-list" id="qe-list"></div>
+        <p class="qe-warning" id="qe-warning" style="display:none">
+          <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+          Os times em quadra mudaram: placar e tempo desta partida serão zerados.
+        </p>
+        <div id="qe-add-section">
+          <p class="qe-sub">Adicionar time</p>
+          <div class="qe-add" id="qe-add"></div>
+        </div>
+        <div class="qe-footer">
+          <button class="btn-secondary" onclick="closeQueueEditor()">Cancelar</button>
+          <button class="btn-primary" onclick="saveQueueEditor()">Salvar</button>
+        </div>
+      </div>
     </div>
   </div>
 
