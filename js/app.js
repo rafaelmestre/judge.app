@@ -583,6 +583,7 @@ let draftLog    = [];
   if (savedScreen) {
     showScreen(savedScreen);
     if (savedScreen === 'screen-summary') { renderSummary(); renderCloudStatus(); return; }
+    if (savedScreen.startsWith('screen-history')) { showScreen('screen-rules'); return; }
 
     if (savedScreen === 'screen-match' || savedScreen === 'screen-result') {
       if (!playing[0] || !playing[1]) return;
@@ -778,14 +779,19 @@ function confirmExitSession() {
 
 function renderSummary() {
   renderCloudStatus();
-  const h = sessionHistory;
+  renderSessionView('sum', sessionHistory, sessionStartedAt, sessionEndedAt || Date.now());
+}
+
+/* Desenha um resumo de sessão (usado no fim do dia e no histórico).
+   prefix: 'sum' (tela de resumo) ou 'hd' (detalhe do histórico) */
+function renderSessionView(prefix, h, startTs, endTs) {
+  const $ = id => document.getElementById(`${prefix}-${id}`);
   const totalSec   = h.reduce((acc, r) => acc + r.duration, 0);
   const totalGoals = h.reduce((acc, r) => acc + r.scores[0] + r.scores[1], 0);
 
-  document.getElementById('sum-period').textContent = sessionStartedAt
-    ? `${fmtClock(sessionStartedAt)} – ${fmtClock(sessionEndedAt || Date.now())}` : '';
+  $('period').textContent = startTs ? `${fmtClock(startTs)} – ${fmtClock(endTs || Date.now())}` : '';
 
-  document.getElementById('sum-stats').innerHTML = `
+  $('stats').innerHTML = `
     <div class="sum-stat"><span class="sum-stat-num">${h.length}</span><span class="sum-stat-lbl">Rodadas</span></div>
     <div class="sum-stat"><span class="sum-stat-num">${fmtDuration(totalSec)}</span><span class="sum-stat-lbl">Tempo jogado</span></div>
     <div class="sum-stat"><span class="sum-stat-num">${totalGoals}</span><span class="sum-stat-lbl">Gols</span></div>`;
@@ -793,7 +799,7 @@ function renderSummary() {
   const wins = {};
   h.forEach(r => { if (r.winner) wins[r.winner] = (wins[r.winner] || 0) + 1; });
   const ranking = Object.entries(wins).sort((a, b) => b[1] - a[1]);
-  document.getElementById('sum-wins').innerHTML = ranking.length
+  $('wins').innerHTML = ranking.length
     ? ranking.map(([id, n]) => {
         const t = getTeam(id);
         return `<div class="sum-win-chip">${jerseysvg(t, 22)}<span>${t.name}</span><strong>${n}</strong></div>`;
@@ -801,7 +807,7 @@ function renderSummary() {
     : '<span class="queue-empty">Nenhuma vitória registrada</span>';
 
   const reasonLbl = { time: 'Tempo', goals: 'Gols', exit: 'Interrompida', manual: 'Encerrada' };
-  document.getElementById('sum-rounds').innerHTML = h.length
+  $('rounds').innerHTML = h.length
     ? h.map(r => {
         const ta = getTeam(r.teams[0]), tb = getTeam(r.teams[1]);
         const wa = r.winner === r.teams[0] ? 'win' : '', wb = r.winner === r.teams[1] ? 'win' : '';
@@ -817,7 +823,156 @@ function renderSummary() {
 }
 
 /* ══════════════════════════════════════════════════
-   NUVEM — status, login por código
+   HISTÓRICO — sessões da nuvem + estatísticas por time
+══════════════════════════════════════════════════ */
+const HISTORY_CACHE_KEY = 'judgeapp_history_cache';
+let historyData = [];       // sessões no formato do app
+let historyTab  = 'sessions';
+
+/* converte uma linha do banco para o formato usado nas telas */
+function fromCloudSession(s) {
+  const rounds = (s.rounds || [])
+    .slice()
+    .sort((a, b) => a.round_number - b.round_number)
+    .map(r => ({
+      id: r.id, round: r.round_number,
+      teams: [r.team_a, r.team_b], scores: [r.score_a, r.score_b],
+      winner: r.winner, reason: r.reason, duration: r.duration_sec,
+      endedAt: Date.parse(r.ended_at),
+    }));
+  return {
+    id: s.id,
+    startedAt: Date.parse(s.started_at),
+    endedAt: s.ended_at ? Date.parse(s.ended_at) : null,
+    rules: { minutes: s.rule_minutes, goals: s.rule_goals },
+    rounds,
+  };
+}
+
+function openHistory() {
+  if (!Cloud.status().loggedIn) { openLogin(); return; }
+  showScreen('screen-history');
+  try { historyData = JSON.parse(localStorage.getItem(HISTORY_CACHE_KEY)) || []; } catch (e) { historyData = []; }
+  renderHistory();
+  refreshHistory();
+}
+
+async function refreshHistory() {
+  const info = document.getElementById('hist-info');
+  info.textContent = 'Atualizando…';
+  try {
+    await Cloud.flush(); // envia o que estiver pendente antes de ler
+    const rows = await Cloud.listSessions(200);
+    historyData = rows.map(fromCloudSession).filter(s => s.rounds.length);
+    try { localStorage.setItem(HISTORY_CACHE_KEY, JSON.stringify(historyData)); } catch (e) {}
+    info.textContent = `Atualizado às ${fmtClock(Date.now())}`;
+  } catch (e) {
+    console.warn(e);
+    info.textContent = navigator.onLine
+      ? 'Não foi possível atualizar — mostrando a última versão'
+      : 'Sem internet — mostrando a última versão salva';
+  }
+  renderHistory();
+}
+
+function setHistoryTab(tab) {
+  historyTab = tab;
+  renderHistory();
+}
+
+function fmtDay(ts) {
+  const d = new Date(ts);
+  const wd = d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
+  return `${wd.charAt(0).toUpperCase() + wd.slice(1)}, ${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
+}
+
+function renderHistory() {
+  const sessions = historyData;
+  const allRounds = sessions.flatMap(s => s.rounds);
+  const goals = allRounds.reduce((a, r) => a + r.scores[0] + r.scores[1], 0);
+
+  document.getElementById('hist-overview').innerHTML = `
+    <div class="sum-stat"><span class="sum-stat-num">${sessions.length}</span><span class="sum-stat-lbl">Sessões</span></div>
+    <div class="sum-stat"><span class="sum-stat-num">${allRounds.length}</span><span class="sum-stat-lbl">Rodadas</span></div>
+    <div class="sum-stat"><span class="sum-stat-num">${goals}</span><span class="sum-stat-lbl">Gols</span></div>`;
+
+  document.querySelectorAll('.hist-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === historyTab));
+  const body = document.getElementById('hist-body');
+
+  if (!sessions.length) {
+    body.innerHTML = `<div class="hist-empty"><i class="ti ti-calendar-off" aria-hidden="true"></i>
+      <p>Nenhuma sessão salva ainda.</p><p class="hist-empty-sub">Jogue e encerre uma sessão logado para ela aparecer aqui.</p></div>`;
+    return;
+  }
+
+  body.innerHTML = historyTab === 'sessions' ? renderHistorySessions(sessions) : renderTeamStats(allRounds);
+}
+
+function renderHistorySessions(sessions) {
+  return sessions.map((s, i) => {
+    const goals = s.rounds.reduce((a, r) => a + r.scores[0] + r.scores[1], 0);
+    const wins = {};
+    s.rounds.forEach(r => { if (r.winner) wins[r.winner] = (wins[r.winner] || 0) + 1; });
+    const top = Object.entries(wins).sort((a, b) => b[1] - a[1])[0];
+    const topHtml = top
+      ? `<span class="hist-top">${jerseysvg(getTeam(top[0]), 18)} ${getTeam(top[0]).name} · ${top[1]}V</span>` : '';
+    const period = `${fmtClock(s.startedAt)} – ${s.endedAt ? fmtClock(s.endedAt) : 'em andamento'}`;
+    return `<button class="hist-session" onclick="openHistoryDetail(${i})">
+      <div class="hist-session-main">
+        <span class="hist-day">${fmtDay(s.startedAt)}</span>
+        <span class="hist-period">${period}</span>
+        <span class="hist-meta">${s.rounds.length} ${s.rounds.length === 1 ? 'rodada' : 'rodadas'} · ${goals} gols</span>
+      </div>
+      ${topHtml}
+      <i class="ti ti-chevron-right hist-chevron" aria-hidden="true"></i>
+    </button>`;
+  }).join('');
+}
+
+/* Estatística por time: interrompidas não contam */
+function computeTeamStats(rounds) {
+  const st = {};
+  const get = id => (st[id] ||= { id, j: 0, v: 0, e: 0, d: 0, gp: 0, gc: 0 });
+  rounds.filter(r => r.reason !== 'exit').forEach(r => {
+    [0, 1].forEach(side => {
+      const t = get(r.teams[side]);
+      const mine = r.scores[side], theirs = r.scores[1 - side];
+      t.j++; t.gp += mine; t.gc += theirs;
+      if (mine > theirs) t.v++; else if (mine === theirs) t.e++; else t.d++;
+    });
+  });
+  return Object.values(st)
+    .map(t => ({ ...t, aprov: t.j ? Math.round((t.v * 3 + t.e) / (t.j * 3) * 100) : 0 }))
+    .sort((a, b) => b.v - a.v || b.aprov - a.aprov || (b.gp - b.gc) - (a.gp - a.gc));
+}
+
+function renderTeamStats(rounds) {
+  const rows = computeTeamStats(rounds);
+  if (!rows.length) return '<span class="queue-empty">Sem partidas concluídas</span>';
+  return `<div class="ts-table">
+    <div class="ts-row ts-head"><span>Time</span><span>J</span><span>V</span><span>E</span><span>D</span><span>%</span></div>
+    ${rows.map((t, i) => {
+      const team = getTeam(t.id);
+      return `<div class="ts-row">
+        <span class="ts-team"><span class="ts-pos">${i + 1}</span>${jerseysvg(team, 22)}<span class="ts-name">${team.name}<small>GP ${t.gp} · GC ${t.gc}</small></span></span>
+        <span>${t.j}</span><span class="ts-v">${t.v}</span><span>${t.e}</span><span>${t.d}</span>
+        <span class="ts-aprov">${t.aprov}</span>
+      </div>`;
+    }).join('')}
+  </div>
+  <p class="ts-note">% = aproveitamento (vitória 3 pts, empate 1). Rodadas interrompidas não entram.</p>`;
+}
+
+function openHistoryDetail(i) {
+  const s = historyData[i];
+  if (!s) return;
+  document.getElementById('hd-day').textContent = fmtDay(s.startedAt);
+  renderSessionView('hd', s.rounds, s.startedAt, s.endedAt);
+  showScreen('screen-history-detail');
+}
+
+/* ══════════════════════════════════════════════════
+   NUVEM — status, login
 ══════════════════════════════════════════════════ */
 function renderCloudStatus() {
   const st = Cloud.status();
@@ -825,13 +980,15 @@ function renderCloudStatus() {
   const sum  = document.getElementById('sum-cloud');
   if (!card) return;
 
+  const histBtn = document.getElementById('btn-history');
+  if (histBtn) histBtn.style.display = st.configured ? 'flex' : 'none';
   if (!st.configured) { card.style.display = 'none'; if (sum) sum.style.display = 'none'; return; }
   card.style.display = 'flex';
 
   let icon, title, sub, action;
   if (!st.loggedIn) {
-    icon = 'ti-cloud-off'; title = 'Histórico só neste aparelho';
-    sub = 'Entre para salvar as sessões na nuvem';
+    icon = 'ti-cloud-off'; title = 'Entre para salvar na nuvem';
+    sub = 'E veja seu histórico em qualquer aparelho';
     action = `<button class="cloud-btn" onclick="openLogin()">Entrar</button>`;
   } else {
     icon = st.pending ? 'ti-cloud-upload' : 'ti-cloud-check';
@@ -840,7 +997,8 @@ function renderCloudStatus() {
       ? (st.online ? `Enviando ${st.pending} ${st.pending === 1 ? 'item' : 'itens'}…` : `${st.pending} pendente(s) — envia quando tiver internet`)
       : 'Tudo salvo na nuvem';
     if (st.error) sub = 'Erro ao enviar — tentaremos de novo';
-    action = `<button class="cloud-btn ghost" onclick="logoutCloud()">Sair da conta</button>`;
+    action = `<button class="cloud-btn" onclick="openHistory()"><i class="ti ti-history" aria-hidden="true"></i> Histórico</button>
+      <button class="cloud-btn ghost icon" onclick="logoutCloud()" aria-label="Sair da conta" title="Sair da conta"><i class="ti ti-logout"></i></button>`;
   }
   card.innerHTML = `
     <i class="ti ${icon} cloud-icon" aria-hidden="true"></i>
@@ -851,7 +1009,7 @@ function renderCloudStatus() {
     sum.style.display = 'flex';
     sum.className = 'sum-cloud ' + (st.loggedIn && !st.pending ? 'ok' : '');
     sum.innerHTML = !st.loggedIn
-      ? `<i class="ti ti-cloud-off" aria-hidden="true"></i> Sessão salva só neste aparelho. <button class="link-btn" onclick="openLogin()">Entrar</button> para enviar à nuvem.`
+      ? `<i class="ti ti-cloud-off" aria-hidden="true"></i> Ainda não enviada. <button class="link-btn" onclick="openLogin()">Entrar</button> para salvar na nuvem.`
       : st.pending
         ? `<i class="ti ti-cloud-upload" aria-hidden="true"></i> Enviando para a nuvem… (${st.pending} pendente${st.pending === 1 ? '' : 's'})`
         : `<i class="ti ti-cloud-check" aria-hidden="true"></i> Sessão salva na nuvem`;

@@ -31,6 +31,9 @@
   <div id="screen-rules" class="screen active">
     <div class="topbar">
       <span class="app-logo">Judge App</span>
+      <button class="topbar-right-btn" id="btn-history" onclick="openHistory()" style="display:none" aria-label="Histórico">
+        <i class="ti ti-history" aria-hidden="true"></i>
+      </button>
     </div>
     <div class="screen-body">
       <p class="screen-title">Definir Regras</p>
@@ -258,6 +261,48 @@
       <button class="btn-primary" onclick="newSession()">
         <i class="ti ti-plus" aria-hidden="true"></i> Nova Sessão
       </button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       TELA 6 — HISTÓRICO
+  ══════════════════════════════════════════ -->
+  <div id="screen-history" class="screen">
+    <div class="topbar">
+      <button class="back-btn" onclick="showScreen('screen-rules')" aria-label="Voltar"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+      <span class="app-logo">Judge App</span>
+      <button class="topbar-right-btn" onclick="refreshHistory()" aria-label="Atualizar"><i class="ti ti-refresh" aria-hidden="true"></i></button>
+    </div>
+    <div class="result-scroll">
+      <p class="screen-title">Histórico</p>
+      <p class="hist-info" id="hist-info"></p>
+      <div class="sum-stats" id="hist-overview"></div>
+      <div class="hist-tabs" role="tablist">
+        <button class="hist-tab active" data-tab="sessions" onclick="setHistoryTab('sessions')">Sessões</button>
+        <button class="hist-tab" data-tab="teams" onclick="setHistoryTab('teams')">Times</button>
+      </div>
+      <div id="hist-body"></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       TELA 7 — DETALHE DA SESSÃO
+  ══════════════════════════════════════════ -->
+  <div id="screen-history-detail" class="screen">
+    <div class="topbar">
+      <button class="back-btn" onclick="showScreen('screen-history')" aria-label="Voltar"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+      <span class="app-logo">Judge App</span>
+    </div>
+    <div class="result-scroll">
+      <div class="result-hero">
+        <p class="result-title" id="hd-day"></p>
+        <p class="result-sub" id="hd-period"></p>
+      </div>
+      <div class="sum-stats" id="hd-stats"></div>
+      <p class="sum-label">Vitórias por time</p>
+      <div class="sum-wins" id="hd-wins"></div>
+      <p class="sum-label">Rodadas</p>
+      <div class="sum-rounds" id="hd-rounds"></div>
     </div>
   </div>
 

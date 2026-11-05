@@ -834,7 +834,7 @@ body {
 .cloud-info { flex: 1; min-width: 0; }
 .cloud-title { font-size: 14px; font-weight: 800; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cloud-sub { font-size: 12px; color: var(--text2); }
-.cloud-btn {
+.cloud-btn { display: flex; align-items: center; gap: 4px;
   padding: 7px 12px; border-radius: 20px; flex-shrink: 0;
   border: 1.5px solid var(--purple); background: var(--purple); color: var(--white);
   font-family: 'Nunito', sans-serif; font-size: 12px; font-weight: 800; cursor: pointer;
@@ -863,3 +863,64 @@ body {
 .text-input.code { text-align: center; font-size: 26px; letter-spacing: 8px; font-weight: 900; }
 .input-error { min-height: 18px; margin-top: 8px; font-size: 13px; font-weight: 700; color: #dc2626; }
 .login-switch { margin-top: 4px; font-size: 14px; font-weight: 800; }
+/* ═══════════════════════════════════════════════
+   HISTÓRICO
+═══════════════════════════════════════════════ */
+.topbar-right-btn {
+  position: absolute; right: 16px;
+  background: rgba(255,255,255,0.15); border: none; color: var(--white);
+  width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 19px; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.topbar-right-btn:active { background: rgba(255,255,255,0.25); }
+.cloud-btn.icon { width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+
+.hist-info { font-size: 12px; font-weight: 700; color: var(--text3); margin: 2px 0 12px; min-height: 16px; }
+.hist-tabs {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 4px; margin-bottom: 12px;
+}
+.hist-tab {
+  padding: 9px; border: none; border-radius: var(--radius-sm); background: transparent;
+  font-family: 'Nunito', sans-serif; font-size: 14px; font-weight: 800; color: var(--text2); cursor: pointer;
+}
+.hist-tab.active { background: var(--purple); color: var(--white); }
+
+.hist-session {
+  width: 100%; display: flex; align-items: center; gap: 10px; text-align: left;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 12px 12px 12px 14px; margin-bottom: 8px; cursor: pointer;
+  font-family: 'Nunito', sans-serif; -webkit-tap-highlight-color: transparent;
+}
+.hist-session:active { background: rgba(85,37,131,0.06); }
+.hist-session-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.hist-day { font-size: 15px; font-weight: 900; color: var(--text); }
+.hist-period { font-size: 12px; font-weight: 700; color: var(--text2); }
+.hist-meta { font-size: 12px; font-weight: 700; color: var(--purple); margin-top: 2px; }
+.hist-top {
+  display: flex; align-items: center; gap: 4px; flex-shrink: 0;
+  padding: 3px 8px 3px 5px; border-radius: 20px;
+  background: rgba(253,185,39,0.15); color: #92640a; font-size: 12px; font-weight: 800;
+}
+.hist-chevron { color: var(--text3); font-size: 18px; }
+.hist-empty { text-align: center; padding: 30px 10px; color: var(--text2); font-weight: 700; }
+.hist-empty i { font-size: 36px; color: var(--text3); }
+.hist-empty-sub { font-size: 13px; color: var(--text3); margin-top: 4px; }
+
+.ts-table { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.ts-row {
+  display: grid; grid-template-columns: 1fr 30px 30px 30px 30px 40px; align-items: center;
+  padding: 8px 10px; border-top: 1px solid var(--border);
+  font-size: 14px; font-weight: 800; color: var(--text2); text-align: center;
+}
+.ts-row.ts-head { border-top: none; font-size: 11px; color: var(--purple); letter-spacing: 0.5px; background: rgba(85,37,131,0.05); }
+.ts-row.ts-head span:first-child { text-align: left; }
+.ts-team { display: flex; align-items: center; gap: 6px; text-align: left; min-width: 0; }
+.ts-pos { width: 16px; font-size: 12px; color: var(--text3); font-weight: 900; }
+.ts-name { display: flex; flex-direction: column; color: var(--text); font-weight: 900; line-height: 1.15; min-width: 0; }
+.ts-name small { font-size: 11px; color: var(--text3); font-weight: 700; }
+.ts-v { color: var(--text); }
+.ts-aprov { color: var(--purple); font-weight: 900; }
+.ts-note { font-size: 11px; color: var(--text3); font-weight: 700; margin: 8px 2px 16px; }
