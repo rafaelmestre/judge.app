@@ -8,7 +8,7 @@ const TEAMS_DEF = [
   { id: 'vermelho',  name: 'Vermelho',   color: '#DC2626', textColor: '#fff' },
   { id: 'verde',     name: 'Verde',      color: '#16A34A', textColor: '#fff' },
   { id: 'amarelo',   name: 'Amarelo',    color: '#CA8A04', textColor: '#fff' },
-  { id: 'preto',     name: 'Preto',      color: '#1a1a1a', textColor: '#fff' },
+  { id: 'preto',     name: 'Preto',      color: '#1a1a1a', textColor: '#fff', border: true },
   { id: 'branco',    name: 'Branco',     color: '#e5e7eb', textColor: '#333', border: true },
   { id: 'cinza',     name: 'Cinza',      color: '#6b7280', textColor: '#fff' },
   { id: 'semcolete', name: 'Sem Colete', color: '#d1d5db', textColor: '#555', pattern: 'stripes', border: true },
@@ -30,6 +30,7 @@ let timerRunning  = false;
 let timerInterval = null;
 let roundEnded    = false;
 let pendingSorteio = null;
+let finishing = false;      // gol decisivo: animação antes do resultado
 let sessionHistory = [];   // rodadas do dia de jogo
 let sessionStartedAt = null;
 let sessionEndedAt = null;
@@ -46,10 +47,15 @@ const SoundFX = (() => {
     } catch(e) {}
   }
 
+  // vibração complementa o som (Android; no iPhone o navegador não permite)
+  function buzz(pattern) {
+    try { if (navigator.vibrate) navigator.vibrate(pattern); } catch(e) {}
+  }
+
   return {
-    apitarInicio: () => play('start.mp3'),
-    apitarFim:    () => play('finish.mp3'),
-    apitarGol:    () => play('goal.mp3'),
+    apitarInicio: () => { play('start.mp3');  buzz(40); },
+    apitarFim:    () => { play('finish.mp3'); buzz([120, 80, 120, 80, 300]); },
+    apitarGol:    () => { play('goal.mp3');   buzz([60, 40, 60]); },
   };
 })();
 
@@ -66,7 +72,7 @@ function saveState() {
     timerSeconds, timerTotal, roundEnded,
     pendingSorteio, draftCounts, draftLog,
     sessionHistory, sessionStartedAt, sessionEndedAt, sessionId,
-    currentScreen: document.querySelector('.screen.active')?.id || 'screen-rules'
+    currentScreen: currentScreenId
   };
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch(e) {}
 }
@@ -106,10 +112,145 @@ function loadState() {
 /* ══════════════════════════════════════════════════
    NAVEGAÇÃO
 ══════════════════════════════════════════════════ */
+let currentScreenId = 'screen-rules';
+let booting = true;
+setTimeout(() => { booting = false; }, 400);
+
+const SCREEN_ORDER = ['screen-rules', 'screen-setup', 'screen-match', 'screen-result',
+                      'screen-summary', 'screen-history', 'screen-history-detail'];
+
 function showScreen(id) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
-  window.scrollTo(0, 0);
+  const prev = currentScreenId;
+  currentScreenId = id;
+  const swap = () => {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    window.scrollTo(0, 0);
+  };
+  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!booting && prev !== id && document.startViewTransition && !reduce) {
+    // voltar = desliza pra direita; avançar (ou próxima rodada) = pra esquerda
+    const back = SCREEN_ORDER.indexOf(id) < SCREEN_ORDER.indexOf(prev)
+              && !(prev === 'screen-result' && id === 'screen-match');
+    document.documentElement.dataset.nav = back ? 'back' : 'forward';
+    document.startViewTransition(swap);
+  } else {
+    swap();
+  }
+  updateWakeLock();
+}
+
+/* ══════════════════════════════════════════════════
+   TELA SEMPRE ACESA durante a partida (Screen Wake Lock)
+══════════════════════════════════════════════════ */
+let wakeLock = null;
+async function updateWakeLock() {
+  const want = currentScreenId === 'screen-match' && !document.hidden;
+  try {
+    if (want && !wakeLock && 'wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!want && wakeLock) {
+      await wakeLock.release();
+      wakeLock = null;
+    }
+  } catch (e) { wakeLock = null; }
+}
+document.addEventListener('visibilitychange', updateWakeLock);
+
+/* ══════════════════════════════════════════════════
+   EFEITOS — gol e confete
+══════════════════════════════════════════════════ */
+function reducedMotion() {
+  return window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function goalEffect(teamIdx) {
+  const scoreEl = document.getElementById(teamIdx === 0 ? 'score-a' : 'score-b');
+  const card    = document.getElementById(teamIdx === 0 ? 'card-a' : 'card-b');
+  [scoreEl, card].forEach(el => { el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); });
+
+  const team = getTeam(playing[teamIdx]);
+  const flash = document.getElementById('goal-flash');
+  document.getElementById('goal-team').textContent = team.name;
+  flash.style.setProperty('--team-color', team.color);
+  flash.classList.remove('show'); void flash.offsetWidth; flash.classList.add('show');
+}
+
+function launchConfetti(colors, big = false) {
+  if (reducedMotion()) return;
+  const canvas = document.getElementById('confetti');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = innerWidth * dpr; canvas.height = innerHeight * dpr;
+  ctx.scale(dpr, dpr);
+  canvas.style.display = 'block';
+
+  const n = big ? 220 : 120;
+  const parts = Array.from({ length: n }, () => ({
+    x: innerWidth / 2 + (Math.random() - 0.5) * 80,
+    y: innerHeight * 0.35,
+    vx: (Math.random() - 0.5) * (big ? 16 : 12),
+    vy: -Math.random() * (big ? 16 : 12) - 4,
+    w: 6 + Math.random() * 6, h: 8 + Math.random() * 8,
+    rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.3,
+    color: colors[Math.floor(Math.random() * colors.length)],
+  }));
+  const start = performance.now();
+  const dur = big ? 3200 : 2400;
+
+  (function frame(t) {
+    const p = (t - start) / dur;
+    ctx.clearRect(0, 0, innerWidth, innerHeight);
+    parts.forEach(c => {
+      c.vy += 0.35; c.vx *= 0.99; c.x += c.vx; c.y += c.vy; c.rot += c.vr;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1 - p * p);
+      ctx.translate(c.x, c.y); ctx.rotate(c.rot);
+      ctx.fillStyle = c.color; ctx.fillRect(-c.w / 2, -c.h / 2, c.w, c.h);
+      ctx.restore();
+    });
+    if (p < 1) requestAnimationFrame(frame);
+    else { ctx.clearRect(0, 0, innerWidth, innerHeight); canvas.style.display = 'none'; }
+  })(start);
+}
+
+/* ══════════════════════════════════════════════════
+   TEMA — automático / claro / escuro
+══════════════════════════════════════════════════ */
+const THEME_KEY = 'judgeapp_theme';
+function getThemePref() {
+  try { return localStorage.getItem(THEME_KEY) || 'auto'; } catch (e) { return 'auto'; }
+}
+function applyTheme() {
+  const pref = getThemePref();
+  const dark = pref === 'dark' || (pref === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#1f0f33' : '#552583');
+  const btn = document.getElementById('btn-theme');
+  if (btn) {
+    const icon  = { auto: 'ti-brightness-half', dark: 'ti-moon', light: 'ti-sun' }[pref];
+    const label = { auto: 'Tema: automático', dark: 'Tema: escuro', light: 'Tema: claro' }[pref];
+    btn.innerHTML = `<i class="ti ${icon}" aria-hidden="true"></i>`;
+    btn.setAttribute('aria-label', label); btn.title = label;
+  }
+}
+function cycleTheme() {
+  const next = { auto: 'dark', dark: 'light', light: 'auto' }[getThemePref()];
+  try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+  document.documentElement.dataset.nav = 'fade';
+  if (document.startViewTransition && !reducedMotion()) document.startViewTransition(applyTheme);
+  else applyTheme();
+  showToast({ auto: 'Tema automático (segue o celular)', dark: 'Modo escuro', light: 'Modo claro' }[next]);
+}
+if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
+
+let toastTimer = null;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 1800);
 }
 
 /* ══════════════════════════════════════════════════
@@ -330,7 +471,7 @@ function updateRingProgress(ratio) {
 }
 
 function toggleTimer() {
-  if (roundEnded) return;
+  if (roundEnded || finishing) return;
   timerRunning = !timerRunning;
   const btn = document.getElementById('btn-play');
   if (timerRunning) {
@@ -360,15 +501,19 @@ function toggleTimer() {
    PLACAR
 ══════════════════════════════════════════════════ */
 function changeScore(team, delta) {
-  if (roundEnded) return;
+  if (roundEnded || finishing) return;
+  const before = scores[team];
   scores[team] = Math.max(0, scores[team] + delta);
+  if (scores[team] === before) return;
   document.getElementById(team === 0 ? 'score-a' : 'score-b').textContent = scores[team];
-  if (delta > 0) SoundFX.apitarGol();
+  if (delta > 0) { SoundFX.apitarGol(); goalEffect(team); }
   saveState();
   if (scores[0] >= ruleGoals || scores[1] >= ruleGoals) {
+    // gol decisivo: para o tempo, deixa a comemoração aparecer e depois mostra o resultado
     clearInterval(timerInterval);
     timerRunning = false;
-    endRound('goals');
+    finishing = true;
+    setTimeout(() => { finishing = false; endRound('goals'); }, reducedMotion() ? 0 : 1100);
   }
 }
 
@@ -494,6 +639,12 @@ function endRound(reason) {
 
   saveState();
   showScreen('screen-result');
+
+  if (scores[0] !== scores[1]) {
+    const w = getTeam(sessionHistory[sessionHistory.length - 1]?.winner) || null;
+    const colors = [w ? w.color : '#552583', '#FDB927', '#552583', '#ffffff'];
+    setTimeout(() => launchConfetti(colors, title === '3 Vitórias Seguidas!'), 300);
+  }
 }
 
 function realizarSorteio() {
@@ -556,6 +707,7 @@ let draftCounts = {};
 let draftLog    = [];
 
 (function init() {
+  applyTheme();
   const savedScreen = loadState();
 
   document.getElementById('val-minutes').textContent = ruleMinutes;
@@ -606,6 +758,10 @@ let draftLog    = [];
       btn.className = 'ctrl-btn start';
       btn.innerHTML = '<i class="ti ti-player-play" aria-hidden="true"></i> Continuar';
       if (savedScreen === 'screen-result') showScreen('screen-match');
+      // app fechado durante a comemoração do gol decisivo: conclui a rodada
+      if (!roundEnded && (scores[0] >= ruleGoals || scores[1] >= ruleGoals)) {
+        booting = true; endRound('goals'); booting = false;
+      }
     }
   }
 })();
@@ -842,6 +998,7 @@ function fromCloudSession(s) {
     }));
   return {
     id: s.id,
+    name: s.name || null,
     startedAt: Date.parse(s.started_at),
     endedAt: s.ended_at ? Date.parse(s.ended_at) : null,
     rules: { minutes: s.rule_minutes, goals: s.rule_goals },
@@ -864,7 +1021,7 @@ async function refreshHistory() {
     await Cloud.flush(); // envia o que estiver pendente antes de ler
     const rows = await Cloud.listSessions(200);
     historyData = rows.map(fromCloudSession).filter(s => s.rounds.length);
-    try { localStorage.setItem(HISTORY_CACHE_KEY, JSON.stringify(historyData)); } catch (e) {}
+    saveHistoryCache();
     info.textContent = `Atualizado às ${fmtClock(Date.now())}`;
   } catch (e) {
     console.warn(e);
@@ -919,8 +1076,8 @@ function renderHistorySessions(sessions) {
     const period = `${fmtClock(s.startedAt)} – ${s.endedAt ? fmtClock(s.endedAt) : 'em andamento'}`;
     return `<button class="hist-session" onclick="openHistoryDetail(${i})">
       <div class="hist-session-main">
-        <span class="hist-day">${fmtDay(s.startedAt)}</span>
-        <span class="hist-period">${period}</span>
+        <span class="hist-day">${s.name ? escapeHtml(s.name) : fmtDay(s.startedAt)}</span>
+        <span class="hist-period">${s.name ? fmtDay(s.startedAt) + ' · ' : ''}${period}</span>
         <span class="hist-meta">${s.rounds.length} ${s.rounds.length === 1 ? 'rodada' : 'rodadas'} · ${goals} gols</span>
       </div>
       ${topHtml}
@@ -963,12 +1120,114 @@ function renderTeamStats(rounds) {
   <p class="ts-note">% = aproveitamento (vitória 3 pts, empate 1). Rodadas interrompidas não entram.</p>`;
 }
 
+let detailIdx = -1;
+
 function openHistoryDetail(i) {
   const s = historyData[i];
   if (!s) return;
-  document.getElementById('hd-day').textContent = fmtDay(s.startedAt);
-  renderSessionView('hd', s.rounds, s.startedAt, s.endedAt);
+  detailIdx = i;
+  renderHistoryDetail();
   showScreen('screen-history-detail');
+}
+
+function renderHistoryDetail() {
+  const s = historyData[detailIdx];
+  if (!s) return;
+  document.getElementById('hd-day').textContent = s.name || fmtDay(s.startedAt);
+  renderSessionView('hd', s.rounds, s.startedAt, s.endedAt);
+  if (s.name) document.getElementById('hd-period').textContent = `${fmtDay(s.startedAt)} · ${document.getElementById('hd-period').textContent}`;
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function saveHistoryCache() {
+  try { localStorage.setItem(HISTORY_CACHE_KEY, JSON.stringify(historyData)); } catch (e) {}
+}
+
+function cloudActionError(e) {
+  if (e?.code === 'offline') return 'Sem internet — tente de novo quando conectar';
+  if (e?.code === 'not_logged') return 'Entre na sua conta para editar';
+  return 'Não foi possível salvar. Tente de novo.';
+}
+
+/* ── renomear ── */
+function openRenameSession() {
+  const s = historyData[detailIdx];
+  if (!s) return;
+  const input = document.getElementById('rename-input');
+  input.value = s.name || '';
+  document.getElementById('rename-error').textContent = '';
+  document.getElementById('rename-modal').style.display = 'flex';
+  setTimeout(() => { input.focus(); input.select(); }, 50);
+}
+
+function closeRenameSession() {
+  document.getElementById('rename-modal').style.display = 'none';
+}
+
+async function saveRenameSession() {
+  const s = historyData[detailIdx];
+  if (!s) return;
+  const name = document.getElementById('rename-input').value.trim().slice(0, 60);
+  const btn = document.getElementById('rename-save-btn');
+  btn.disabled = true;
+  try {
+    await Cloud.renameSession(s.id, name);
+    s.name = name || null;
+    saveHistoryCache();
+    renderHistoryDetail();
+    renderHistory();
+    closeRenameSession();
+    showToast(name ? 'Nome salvo' : 'Nome removido');
+  } catch (e) {
+    console.warn(e);
+    document.getElementById('rename-error').textContent = cloudActionError(e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ── excluir ── */
+function openDeleteSession() {
+  const s = historyData[detailIdx];
+  if (!s) return;
+  if (s.id === sessionId && !sessionEndedAt) {
+    showToast('Essa sessão ainda está em andamento');
+    return;
+  }
+  const n = s.rounds.length;
+  document.getElementById('delete-text').textContent =
+    `${s.name ? '"' + s.name + '" — ' : ''}${fmtDay(s.startedAt)}. ${n} ${n === 1 ? 'rodada será apagada' : 'rodadas serão apagadas'} e deixam de contar nas estatísticas. Não dá para desfazer.`;
+  document.getElementById('delete-error').textContent = '';
+  document.getElementById('delete-modal').style.display = 'flex';
+}
+
+function closeDeleteSession() {
+  document.getElementById('delete-modal').style.display = 'none';
+}
+
+async function confirmDeleteSession() {
+  const s = historyData[detailIdx];
+  if (!s) return;
+  const btn = document.getElementById('delete-confirm-btn');
+  btn.disabled = true;
+  try {
+    await Cloud.deleteSession(s.id);
+    historyData.splice(detailIdx, 1);
+    detailIdx = -1;
+    saveHistoryCache();
+    closeDeleteSession();
+    renderHistory();
+    showScreen('screen-history');
+    showToast('Sessão excluída');
+  } catch (e) {
+    console.warn(e);
+    document.getElementById('delete-error').textContent = cloudActionError(e);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 /* ══════════════════════════════════════════════════
