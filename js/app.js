@@ -33,6 +33,7 @@ let pendingSorteio = null;
 let sessionHistory = [];   // rodadas do dia de jogo
 let sessionStartedAt = null;
 let sessionEndedAt = null;
+let sessionId = null;       // id da sessão na nuvem
 
 /* ══════════════════════════════════════════════════
    MÓDULO DE SOM — arquivos MP3 em sounds/
@@ -64,7 +65,7 @@ function saveState() {
     consecutiveWins, winnerTeam, roundNumber,
     timerSeconds, timerTotal, roundEnded,
     pendingSorteio, draftCounts, draftLog,
-    sessionHistory, sessionStartedAt, sessionEndedAt,
+    sessionHistory, sessionStartedAt, sessionEndedAt, sessionId,
     currentScreen: document.querySelector('.screen.active')?.id || 'screen-rules'
   };
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch(e) {}
@@ -97,6 +98,7 @@ function loadState() {
     sessionHistory  = s.sessionHistory  ?? [];
     sessionStartedAt = s.sessionStartedAt ?? null;
     sessionEndedAt  = s.sessionEndedAt  ?? null;
+    sessionId       = s.sessionId       ?? null;
     return s.currentScreen || false;
   } catch(e) { return false; }
 }
@@ -264,6 +266,8 @@ function startGame() {
   sessionHistory = [];
   sessionStartedAt = Date.now();
   sessionEndedAt = null;
+  sessionId = newId();
+  syncSession();
   loadRound();
   showScreen('screen-match');
   saveState();
@@ -578,7 +582,7 @@ let draftLog    = [];
 
   if (savedScreen) {
     showScreen(savedScreen);
-    if (savedScreen === 'screen-summary') { renderSummary(); return; }
+    if (savedScreen === 'screen-summary') { renderSummary(); renderCloudStatus(); return; }
 
     if (savedScreen === 'screen-match' || savedScreen === 'screen-result') {
       if (!playing[0] || !playing[1]) return;
@@ -686,7 +690,9 @@ function renderDraftList() {
 function logRound(reason) {
   // rodada interrompida pelo "Sair" não conta vitória
   const winner = (reason === 'exit' || scores[0] === scores[1]) ? null : playing[scores[0] > scores[1] ? 0 : 1];
-  sessionHistory.push({
+  ensureSessionId();
+  const entry = {
+    id: newId(),
     round: roundNumber,
     teams: [playing[0], playing[1]],
     scores: [scores[0], scores[1]],
@@ -694,6 +700,39 @@ function logRound(reason) {
     reason,                                  // 'time' | 'goals' | 'exit'
     duration: timerTotal - timerSeconds,     // segundos jogados
     endedAt: Date.now(),
+  };
+  sessionHistory.push(entry);
+  Cloud.enqueue('rounds', {
+    id: entry.id,
+    session_id: sessionId,
+    round_number: entry.round,
+    team_a: entry.teams[0],
+    team_b: entry.teams[1],
+    score_a: entry.scores[0],
+    score_b: entry.scores[1],
+    winner: entry.winner,
+    reason: entry.reason,
+    duration_sec: entry.duration,
+    ended_at: new Date(entry.endedAt).toISOString(),
+  });
+}
+
+/* sessões iniciadas antes desta versão ainda não têm id */
+function ensureSessionId() {
+  if (sessionId) return;
+  sessionId = newId();
+  if (!sessionStartedAt) sessionStartedAt = Date.now();
+  syncSession();
+}
+
+function syncSession() {
+  Cloud.enqueue('sessions', {
+    id: sessionId,
+    started_at: new Date(sessionStartedAt).toISOString(),
+    ended_at: sessionEndedAt ? new Date(sessionEndedAt).toISOString() : null,
+    rule_minutes: ruleMinutes,
+    rule_goals: ruleGoals,
+    teams: [...new Set([...selectedTeams, ...queue, ...playing].filter(Boolean))],
   });
 }
 
@@ -729,6 +768,8 @@ function confirmExitSession() {
   timerRunning = false;
   roundEnded = true;
   sessionEndedAt = Date.now();
+  ensureSessionId();
+  syncSession();
   closeExitModal();
   renderSummary();
   showScreen('screen-summary');
@@ -736,6 +777,7 @@ function confirmExitSession() {
 }
 
 function renderSummary() {
+  renderCloudStatus();
   const h = sessionHistory;
   const totalSec   = h.reduce((acc, r) => acc + r.duration, 0);
   const totalGoals = h.reduce((acc, r) => acc + r.scores[0] + r.scores[1], 0);
@@ -772,6 +814,127 @@ function renderSummary() {
         </div>`;
       }).join('')
     : '<span class="queue-empty">Nenhuma rodada jogada</span>';
+}
+
+/* ══════════════════════════════════════════════════
+   NUVEM — status, login por código
+══════════════════════════════════════════════════ */
+function renderCloudStatus() {
+  const st = Cloud.status();
+  const card = document.getElementById('cloud-card');
+  const sum  = document.getElementById('sum-cloud');
+  if (!card) return;
+
+  if (!st.configured) { card.style.display = 'none'; if (sum) sum.style.display = 'none'; return; }
+  card.style.display = 'flex';
+
+  let icon, title, sub, action;
+  if (!st.loggedIn) {
+    icon = 'ti-cloud-off'; title = 'Histórico só neste aparelho';
+    sub = 'Entre para salvar as sessões na nuvem';
+    action = `<button class="cloud-btn" onclick="openLogin()">Entrar</button>`;
+  } else {
+    icon = st.pending ? 'ti-cloud-upload' : 'ti-cloud-check';
+    title = st.email;
+    sub = st.pending
+      ? (st.online ? `Enviando ${st.pending} ${st.pending === 1 ? 'item' : 'itens'}…` : `${st.pending} pendente(s) — envia quando tiver internet`)
+      : 'Tudo salvo na nuvem';
+    if (st.error) sub = 'Erro ao enviar — tentaremos de novo';
+    action = `<button class="cloud-btn ghost" onclick="logoutCloud()">Sair da conta</button>`;
+  }
+  card.innerHTML = `
+    <i class="ti ${icon} cloud-icon" aria-hidden="true"></i>
+    <div class="cloud-info"><p class="cloud-title">${title}</p><p class="cloud-sub">${sub}</p></div>
+    ${action}`;
+
+  if (sum) {
+    sum.style.display = 'flex';
+    sum.className = 'sum-cloud ' + (st.loggedIn && !st.pending ? 'ok' : '');
+    sum.innerHTML = !st.loggedIn
+      ? `<i class="ti ti-cloud-off" aria-hidden="true"></i> Sessão salva só neste aparelho. <button class="link-btn" onclick="openLogin()">Entrar</button> para enviar à nuvem.`
+      : st.pending
+        ? `<i class="ti ti-cloud-upload" aria-hidden="true"></i> Enviando para a nuvem… (${st.pending} pendente${st.pending === 1 ? '' : 's'})`
+        : `<i class="ti ti-cloud-check" aria-hidden="true"></i> Sessão salva na nuvem`;
+  }
+}
+
+let loginMode = 'signin'; // 'signin' | 'signup'
+
+function openLogin() {
+  setLoginMode('signin');
+  document.getElementById('login-modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('login-email').focus(), 50);
+}
+
+function closeLogin() {
+  document.getElementById('login-modal').style.display = 'none';
+}
+
+function setLoginMode(mode) {
+  loginMode = mode;
+  const signup = mode === 'signup';
+  document.getElementById('login-step-form').style.display = 'block';
+  document.getElementById('login-step-confirm').style.display = 'none';
+  document.getElementById('login-title').textContent = signup ? 'Criar conta' : 'Salvar na nuvem';
+  document.getElementById('login-text').textContent = signup
+    ? 'Crie uma conta com seu e-mail e uma senha.'
+    : 'Entre com sua conta para salvar as sessões na nuvem.';
+  document.getElementById('login-submit-btn').textContent = signup ? 'Criar conta' : 'Entrar';
+  document.getElementById('login-switch').textContent = signup ? 'Já tenho conta — entrar' : 'Ainda não tenho conta — criar';
+  document.getElementById('login-password').autocomplete = signup ? 'new-password' : 'current-password';
+  document.getElementById('login-error').textContent = '';
+}
+
+function toggleLoginMode() {
+  setLoginMode(loginMode === 'signin' ? 'signup' : 'signin');
+}
+
+function loginErrorMsg(e) {
+  const code = e?.code || '';
+  const msg  = (e?.message || '').toLowerCase();
+  if (code === 'invalid_credentials' || msg.includes('invalid login')) return 'E-mail ou senha incorretos.';
+  if (code === 'email_not_confirmed' || msg.includes('not confirmed')) return 'Confirme seu e-mail antes de entrar (veja sua caixa de entrada ou spam).';
+  if (code === 'user_already_exists' || msg.includes('already registered')) return 'Esse e-mail já tem conta. Toque em "entrar".';
+  if (code === 'weak_password' || msg.includes('password should')) return 'Senha fraca: use pelo menos 6 caracteres.';
+  if (code === 'over_email_send_rate_limit' || msg.includes('rate limit')) return 'Muitas tentativas. Aguarde alguns minutos e tente de novo.';
+  if (!navigator.onLine) return 'Sem internet no momento.';
+  return 'Não foi possível concluir. Tente de novo.';
+}
+
+async function loginSubmit() {
+  const email = document.getElementById('login-email').value.trim().toLowerCase();
+  const password = document.getElementById('login-password').value;
+  const err = document.getElementById('login-error');
+  const btn = document.getElementById('login-submit-btn');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { err.textContent = 'Digite um e-mail válido'; return; }
+  if (password.length < 6) { err.textContent = 'A senha precisa ter pelo menos 6 caracteres'; return; }
+  err.textContent = '';
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Aguarde…';
+  try {
+    if (loginMode === 'signup') {
+      const result = await Cloud.signUp(email, password);
+      if (result === 'confirm') {
+        document.getElementById('login-sent-to').textContent = email;
+        document.getElementById('login-step-form').style.display = 'none';
+        document.getElementById('login-step-confirm').style.display = 'block';
+        return;
+      }
+    } else {
+      await Cloud.signIn(email, password);
+    }
+    closeLogin();
+  } catch (e) {
+    err.textContent = loginErrorMsg(e);
+    console.warn(e);
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
+}
+
+async function logoutCloud() {
+  if (!confirm('Sair da conta neste aparelho? O que ainda não foi enviado continua guardado aqui.')) return;
+  await Cloud.signOut();
 }
 
 function newSession() {

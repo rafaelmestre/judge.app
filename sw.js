@@ -1,8 +1,10 @@
-const CACHE = 'judge-app-v6';
+const CACHE = 'judge-app-v8';
 const ASSETS = [
   './',
   './index.html',
   './css/style.css',
+  './js/config.js',
+  './js/cloud.js',
   './js/app.js',
   './manifest.json',
   './icons/icon-192x192.png',
@@ -27,6 +29,9 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   const url = e.request.url;
+
+  /* API do Supabase e envios (POST etc.): sempre direto pela rede, sem cache */
+  if (e.request.method !== 'GET' || url.includes('.supabase.co')) return;
 
   /* JS e CSS: network first — garante que atualizações chegam */
   if (url.endsWith('.js') || url.endsWith('.css')) {
