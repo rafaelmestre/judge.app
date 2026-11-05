@@ -1,4 +1,3 @@
-$c = @'
 /* ═══════════════════════════════════════════════════
    JUDGE APP — config.js
    Dados do projeto Supabase (Project Settings → API).
@@ -8,5 +7,3 @@ $c = @'
 ═══════════════════════════════════════════════════ */
 const SUPABASE_URL      = 'https://ngycaqihrnynfzuirxmz.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_2wim0KPaxoMBQsW_xsIabA_vCm5aL71';
-'@
-[IO.File]::WriteAllText("$PWD\js\config.js", $c, (New-Object Text.UTF8Encoding $false))
